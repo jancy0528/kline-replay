@@ -159,24 +159,55 @@ export class ChartView {
     }
   }
 
-  appendBar(candle: Candle): void {
+  get barCount(): number {
+    return this.bars.length
+  }
+
+  /**
+   * 推进一根：时间戳相同说明是「当日 K 被重新合成」，原地替换；不同则追加。
+   * 走 subscribeBar 的 update 通道，不整体 resetData——完整日线有 2800 根时
+   * 每次推进全量重绘会明显卡顿，而且用户画的线也不会丢。
+   */
+  pushLatest(candle: Candle): void {
     const bar = toKLine(candle)
-    this.bars.push(bar)
+    const last = this.bars[this.bars.length - 1]
+    if (last && bar.timestamp < last.timestamp) return
+    if (last && bar.timestamp === last.timestamp) this.bars[this.bars.length - 1] = bar
+    else this.bars.push(bar)
     if (this.pushBar) this.pushBar(bar)
     else this.chart?.resetData()
   }
 
-  /** 放大/缩小：直接改每根 K 线占用的像素宽度。 */
+  /** 放大/缩小：库内部允许的最小 K 线宽度是 1px，一屏约 350 根。 */
   zoom(factor: number): void {
     if (!this.chart) return
     const space = this.chart.getBarSpace().bar
-    this.chart.setBarSpace(Math.max(2, Math.min(40, space * factor)))
+    this.chart.setBarSpace(Math.max(1, Math.min(40, space * factor)))
   }
 
-  /** 左右平移，单位是「根」。 */
+  /** 拉回最右端的最新 K 线。 */
+  toLatest(): void {
+    this.chart?.scrollToRealTime()
+  }
+
+  /** 缩到最小并跳到历史起点，用来回看 2015 年以来的长期走势。 */
+  toEarliest(): void {
+    if (!this.chart) return
+    this.chart.setBarSpace(1)
+    // scrollToDataIndex(i) 把第 i 根放到视口右端。1px 下一屏约 300 根，
+    // 取 280 让左端正好落在第 0 根（滚动边界由库自动 clamp）。
+    // 不能用 scrollByDistance(大负数)：那会把视口推到数据右侧之外的空白区。
+    this.chart.scrollToDataIndex(Math.min(this.bars.length - 1, 280))
+  }
+
+  /**
+   * 左右平移，单位是「根」。
+   * KLineCharts 的 scrollByDistance 正值是往历史方向（视角左移），与按钮语义相反，
+   * 所以这里取反：pan(-6) = 看更早，pan(6) = 看更新。
+   */
   pan(bars: number): void {
     if (!this.chart) return
-    this.chart.scrollByDistance(bars * this.chart.getBarSpace().bar)
+    this.chart.scrollByDistance(-bars * this.chart.getBarSpace().bar)
   }
 
   /** 进入画线模式，由用户在图上点两下完成。 */

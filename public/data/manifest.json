@@ -1,12 +1,13 @@
 {
-  "version": 3,
-  "generatedAt": "2026-11-12T09:17:48+00:00",
-  "source": "baostock 日线 + 东方财富 5 分钟线",
+  "version": 4,
+  "generatedAt": "2026-11-12T10:10:56+00:00",
+  "source": "baostock 前复权日线（2015 起完整历史） + 新浪 5 分钟线",
   "adjust": "前复权，逐日按收盘价对齐",
-  "dataFile": "sessions-526caa8dda.json",
-  "bytes": 832651,
+  "dataFile": "sessions-69bf67cf47.json",
+  "bytes": 2928069,
   "symbols": 15,
   "games": 240,
+  "historyBars": 41994,
   "windows": [
     {
       "key": "m5",
@@ -20,7 +21,7 @@
       "label": "日线",
       "visible": 60,
       "advance": 480,
-      "note": "当日 K 由已揭示的分钟线合成，不泄露未来"
+      "note": "带 2015 年起完整历史；当日 K 由已揭示分钟线合成，不泄露未来"
     }
   ],
   "periods": [
@@ -36,7 +37,7 @@
       "label": "日线",
       "visible": 60,
       "advance": 480,
-      "note": "当日 K 由已揭示的分钟线合成，不泄露未来"
+      "note": "带 2015 年起完整历史；当日 K 由已揭示分钟线合成，不泄露未来"
     }
   ]
 }

@@ -12,6 +12,7 @@ import {
   ReplayEngine,
   configForWindow,
   type Candle,
+  type HistoryPosition,
   type SessionResult,
   type Trade,
 } from './engine/replay'
@@ -160,11 +161,14 @@ function windowBar(e: ReplayEngine): string {
     .map((w) => `<button data-window="${w.key}" class="${w.key === e.currentView ? 'on' : ''}">${w.label}</button>`)
     .join('')
   const watching = e.orderList.filter((o) => o.status === 'watching').length
+  const hint = e.currentView === 'day'
+    ? '日线 · 同一局同一只股票 · 含 2015 年起完整历史，缩小左拉或点「最早」回看'
+    : '分时 · 同一局同一只股票，切换窗口不重开'
   return `<div class="window-bar">
       <div class="window-tabs">${buttons}</div>
       <button class="order-entry" data-action="orders">条件单${watching ? `<b>${watching}</b>` : ''}</button>
     </div>
-    <p class="window-hint">${e.viewLabel}视图 · 同一只股票、同一时间；切换只换 K 线粒度，不换股、不重开局</p>`
+    <p class="window-hint">${hint}</p>`
 }
 
 function quoteBar(candles: Candle[], prevClose: number, dayChg: number): string {
@@ -181,12 +185,60 @@ function quoteBar(candles: Candle[], prevClose: number, dayChg: number): string 
   </div>`
 }
 
+/**
+ * 历史位置标尺：用「当前日之前」的已揭示历史画一条收盘走势缩略线，
+ * 直接回答「现在的股价处在历史什么位置」，不用肉眼把 2800 根 K 拉一遍。
+ * 数据只来自已揭示历史，不泄露未来。
+ */
+function historyBar(h: HistoryPosition | null): string {
+  if (!h || h.series.length < 2) return ''
+  const W = 300
+  const H = 44
+  const top = 4
+  const bottom = H - 3
+  const span = h.high - h.low || 1
+  const y = (v: number): number =>
+    bottom - ((Math.min(h.high, Math.max(h.low, v)) - h.low) / span) * (bottom - top)
+  const pts = h.series
+    .map((v, i) => `${((i / (h.series.length - 1)) * W).toFixed(1)},${y(v).toFixed(1)}`)
+    .join(' ')
+  const dotY = y(h.current).toFixed(1)
+  const isHigh = h.fromHighPct >= 0
+  const isLow = h.fromLowPct <= 0
+  const tag = isHigh
+    ? '创历史新高'
+    : isLow
+      ? '创历史新低'
+      : `高于历史 ${h.rankPct.toFixed(0)}% 的交易日`
+  return `<div class="history-bar">
+    <div class="history-head">
+      <span>历史位置</span>
+      <b class="${isHigh ? 'up' : isLow ? 'down' : ''}">${tag}</b>
+      <span class="history-span">${h.from.slice(0, 7)} 起 · ${h.bars} 根日线</span>
+    </div>
+    <svg class="history-spark" viewBox="0 0 ${W} ${H}" preserveAspectRatio="none" aria-hidden="true">
+      <polygon class="spark-area" points="0,${bottom} ${pts} ${W},${bottom}" />
+      <polyline class="spark-line" points="${pts}" />
+      <line class="spark-now" x1="0" y1="${dotY}" x2="${W}" y2="${dotY}" />
+      <circle class="spark-dot" cx="${W - 1.5}" cy="${dotY}" r="2.6" />
+    </svg>
+    <div class="history-scale">
+      <span>低 ${h.low.toFixed(2)}</span>
+      <span>距高 ${pct(h.fromHighPct)} · 距低 ${pct(h.fromLowPct)}</span>
+      <span>高 ${h.high.toFixed(2)}</span>
+    </div>
+    <div class="history-track"><i style="left:${h.positionPct}%"></i></div>
+  </div>`
+}
+
 function chartTools(): string {
   return `<div class="chart-tools">
     <button data-action="zoomIn">＋</button>
     <button data-action="zoomOut">－</button>
     <button data-action="panLeft">←</button>
     <button data-action="panRight">→</button>
+    <button data-action="earliest">最早</button>
+    <button data-action="latest">最新</button>
     <button data-action="drawLine">趋势线</button>
     <button data-action="drawHLine">水平线</button>
     <button data-action="clearDraw">清除</button>
@@ -250,10 +302,11 @@ function renderTrain(): void {
         <div><span>可用资金</span><b id="s-cash">${money(e.cashValue)}</b></div>
         <div><span>持仓</span><b id="s-shares">${e.shareCount} 股</b></div>
         <div><span>浮动盈亏</span><b id="s-profit" class="${e.profit >= 0 ? 'up' : 'down'}">${pct(e.profitPct)}</b></div>
-        <div><span>已揭示</span><b id="s-progress">${e.index + 1} / ${e.total}</b></div>
+        <div><span>本局进度</span><b id="s-progress">${e.index + 1} / ${e.total}</b></div>
       </section>
       <div id="quote-wrap">${quoteBar(candles, e.previousClose, e.dayChangePct)}</div>
       <div class="indicator-legend" id="indicator-legend">${indicatorLegend(candles)}</div>
+      <div id="history-wrap">${historyBar(e.historyPosition())}</div>
       <div id="chart" class="chart"></div>
       ${chartTools()}
       <p class="blind-note">股票名称与日期已隐藏 · 只能看到已推进的 K 线</p>
@@ -758,8 +811,12 @@ function notifyOrders(before: ConditionalOrder[], after: ConditionalOrder[]): vo
 function updateTrainUI(): void {
   if (!engine || view !== 'train') return
   const candles = engine.visible()
-  if (engine.currentView === 'm5' && candles.length) {
-    chartView?.appendBar(candles[candles.length - 1])
+  const last = candles[candles.length - 1]
+  const count = chartView?.barCount ?? 0
+  // 完整日线有 2800 根，推进时不再整体 resetData：
+  // 根数不变 = 当日 K 被重新合成（原地替换），+1 = 新增一根，其余才全量重设。
+  if (last && chartView && (candles.length === count || candles.length === count + 1)) {
+    chartView.pushLatest(last)
   } else {
     chartView?.setBars(candles, true)
   }
@@ -767,6 +824,8 @@ function updateTrainUI(): void {
   if (legend) legend.innerHTML = indicatorLegend(candles)
   const quote = document.getElementById('quote-wrap')
   if (quote) quote.innerHTML = quoteBar(candles, engine.previousClose, engine.dayChangePct)
+  const history = document.getElementById('history-wrap')
+  if (history) history.innerHTML = historyBar(engine.historyPosition())
   const set = (id: string, text: string, cls?: string): void => {
     const el = document.getElementById(id)
     if (!el) return
@@ -907,6 +966,13 @@ async function handle(action: string, target: HTMLElement): Promise<void> {
       return
     case 'panRight':
       chartView?.pan(6)
+      return
+    case 'earliest':
+      chartView?.toEarliest()
+      toast('已缩到最小并跳到 2015 年附近，点「最新」回到当前')
+      return
+    case 'latest':
+      chartView?.toLatest()
       return
     case 'drawLine':
       chartView?.startDrawing('segment')

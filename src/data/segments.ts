@@ -13,7 +13,11 @@ export interface WindowMeta {
   note: string
 }
 
-/** 同一只标的的两套 K 线，已按交易日收盘价做过复权口径对齐。 */
+/**
+ * 同一只标的的两套 K 线，已按交易日收盘价做过复权口径对齐。
+ * day 从 2015 年起完整保留（约 2800 根/只），供日线视图回看长期走势；
+ * 训练时引擎只输出「日期 < 当前日」的 K，当日 K 由 m5 合成，不泄露未来。
+ */
 export interface SymbolData {
   day: Bar[]
   m5: Bar[]
@@ -42,6 +46,8 @@ export interface DataManifest {
   bytes: number
   symbols: number
   games: number
+  /** 完整日线总根数，仅用于展示/校验，前端不依赖它做逻辑 */
+  historyBars?: number
   windows: WindowMeta[]
 }
 

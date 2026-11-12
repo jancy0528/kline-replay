@@ -1,5 +1,6 @@
 /* kline-replay 离线缓存：同源 GET 走 cache-first，后台顺带更新 */
-const CACHE = 'kline-replay-v3'
+// 升版本会清掉旧缓存里已被替换的数据包，避免 iOS 上历史文件越积越多
+const CACHE = 'kline-replay-v4'
 const CORE = ['./', './index.html', './manifest.webmanifest']
 
 self.addEventListener('install', (event) => {
@@ -29,7 +30,7 @@ self.addEventListener('fetch', (event) => {
 
   const url = new URL(request.url)
 
-  // 数据清单也要 network-first：片段包重新生成后文件名带新 hash，
+  // 数据清单也要 network-first：数据包重新生成后文件名带新 hash，
   // 若这里读到旧清单，会去请求已被清理的旧包。离线时回退缓存。
   if (url.pathname.endsWith('/data/manifest.json')) {
     event.respondWith(

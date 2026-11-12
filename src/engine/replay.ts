@@ -25,6 +25,31 @@ export interface Candle {
   volume: number
 }
 
+/**
+ * 当前价在「已揭示历史」中的位置。
+ * 只统计日期严格早于当前日的日线 + 当前游标价，绝不碰未来 K 线。
+ */
+export interface HistoryPosition {
+  /** 已揭示的历史日线根数 */
+  bars: number
+  from: string
+  to: string
+  high: number
+  low: number
+  highDate: string
+  lowDate: string
+  current: number
+  /** 当前价高于多少比例的历史交易日收盘价（0~100） */
+  rankPct: number
+  /** 相对历史最高/最低价的涨跌幅 */
+  fromHighPct: number
+  fromLowPct: number
+  /** 当前价在 [历史最低, 历史最高] 区间中的位置（0~100） */
+  positionPct: number
+  /** 降采样的历史收盘序列，最后一点是当前价，供界面画走势缩略线 */
+  series: number[]
+}
+
 export interface Trade {
   /** 第几步推进（资金曲线横轴），不是 K 线序号 */
   index: number
@@ -153,6 +178,10 @@ export class ReplayEngine {
   private closedTrades = 0
   private feeTotal: FeeBreakdown = { ...ZERO_FEES }
   private orders: ConditionalOrder[] = []
+  // 完整日线约 2800 根，一次渲染里 visible()/fullCandles() 会被调用多次，
+  // 不缓存就会反复构建上万个对象；游标或视图变化后 key 自然失效。
+  private visibleCache: { key: string; value: Candle[] } | null = null
+  private fullCache: { key: string; value: Candle[] } | null = null
 
   readonly id: string
   readonly code: string
@@ -229,29 +258,24 @@ export class ReplayEngine {
     return this.minBars[0][1]
   }
 
-  /** 日线视图的当日 K：用当天已揭示的分钟 K 聚合，不含未来。 */
+  /** 日线视图的当日 K：只聚合当天已揭示的分钟 K，不含未来。 */
   private todayCandle(cursor: number): Candle | null {
     const day = dayOf(this.minBars[cursor][0])
-    let open = 0
+    // 从当天第一根开始，不必每次从头扫整个分钟序列
+    let first = cursor
+    while (first > 0 && dayOf(this.minBars[first - 1][0]) === day) first -= 1
     let high = -Infinity
     let low = Infinity
     let volume = 0
-    let found = false
-    for (let i = 0; i <= cursor; i += 1) {
+    for (let i = first; i <= cursor; i += 1) {
       const bar = this.minBars[i]
-      if (dayOf(bar[0]) !== day) continue
-      if (!found) {
-        open = bar[1]
-        found = true
-      }
       high = Math.max(high, bar[2])
       low = Math.min(low, bar[3])
       volume += bar[5]
     }
-    if (!found) return null
     return {
-      timestamp: this.dayBars.length,
-      open,
+      timestamp: 0, // 由 candlesUntil 按输出位置重编号为连续序号
+      open: this.minBars[first][1],
       high,
       low,
       close: this.minBars[cursor][4],
@@ -269,20 +293,94 @@ export class ReplayEngine {
     }
     const day = dayOf(this.minBars[cursor][0])
     const out: Candle[] = []
-    this.dayBars.forEach((bar, i) => {
-      if (bar[0] < day) out.push(candleFrom(bar, i))
-    })
+    // dayBars 按日期递增；当前日及之后的完整日 K 一律不进入训练视图。
+    for (const bar of this.dayBars) {
+      if (bar[0] >= day) break
+      out.push(candleFrom(bar, out.length))
+    }
     const today = this.todayCandle(cursor)
-    if (today) out.push(today)
+    if (today) {
+      today.timestamp = out.length
+      out.push(today)
+    }
     return out
   }
 
+  private viewStamp(): string {
+    return `${this.view}:${this.now}:${this.step}`
+  }
+
   visible(): Candle[] {
-    return this.candlesUntil(this.now, false)
+    const key = this.viewStamp()
+    if (this.visibleCache?.key === key) return this.visibleCache.value
+    const value = this.candlesUntil(this.now, false)
+    this.visibleCache = { key, value }
+    return value
   }
 
   fullCandles(): Candle[] {
-    return this.candlesUntil(this.end, true)
+    const key = `${this.view}:${this.end}`
+    if (this.fullCache?.key === key) return this.fullCache.value
+    const value = this.candlesUntil(this.end, true)
+    this.fullCache = { key, value }
+    return value
+  }
+
+  /**
+   * 当前价在已揭示历史中的位置。
+   * 严格只看「日期 < 当前日」的日线，加上游标处的实时价；完整日线数组里
+   * 当前日及之后的 K 全部跳过，因此缩小回看历史不会把未来透露出去。
+   */
+  historyPosition(): HistoryPosition | null {
+    const day = this.currentDay
+    const current = this.currentPrice
+    let high = -Infinity
+    let low = Infinity
+    let highDate = ''
+    let lowDate = ''
+    let from = ''
+    let to = ''
+    let count = 0
+    let below = 0
+    const closes: number[] = []
+    for (const bar of this.dayBars) {
+      if (bar[0] >= day) break
+      if (!from) from = bar[0]
+      to = bar[0]
+      count += 1
+      closes.push(bar[4])
+      if (bar[2] > high) {
+        high = bar[2]
+        highDate = bar[0]
+      }
+      if (bar[3] < low) {
+        low = bar[3]
+        lowDate = bar[0]
+      }
+      if (bar[4] <= current) below += 1
+    }
+    if (!count || !Number.isFinite(high) || !Number.isFinite(low)) return null
+    // 长期历史降到 160 点以内画缩略线，末点接上当前价
+    const stride = Math.max(1, Math.ceil(closes.length / 160))
+    const series: number[] = []
+    for (let i = 0; i < closes.length; i += stride) series.push(round3(closes[i]))
+    series.push(round3(current))
+    const span = high - low
+    return {
+      bars: count,
+      from,
+      to,
+      high: round3(high),
+      low: round3(low),
+      highDate,
+      lowDate,
+      current: round3(current),
+      rankPct: round2((below / count) * 100),
+      fromHighPct: high > 0 ? round2((current / high - 1) * 100) : 0,
+      fromLowPct: low > 0 ? round2((current / low - 1) * 100) : 0,
+      positionPct: span > 0 ? round2(clamp(((current - low) / span) * 100, 0, 100)) : 50,
+      series,
+    }
   }
 
   // ---- 账户 ----------------------------------------------------------
@@ -357,13 +455,17 @@ export class ReplayEngine {
     return { ...this.feeTotal }
   }
 
-  /** 进度用「当前视图已揭示根数 / 完整根数」表示，切换视图后仍连续。 */
+  /**
+   * 进度按统一的时间游标算（已推进的 5 分钟 K 根数），与图表里画了多少根
+   * 历史 K 线脱钩：日线视图带 2015 年起的完整历史，若按 K 线数算会一开局
+   * 就显示「2786 / 2801」，看起来像快结束了；切换窗口也不该让进度跳变。
+   */
   get index(): number {
-    return this.visible().length - 1
+    return this.now - this.start
   }
 
   get total(): number {
-    return this.fullCandles().length
+    return this.end - this.start
   }
 
   get orderList(): ConditionalOrder[] {
