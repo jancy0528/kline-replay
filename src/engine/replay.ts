@@ -1,4 +1,4 @@
-import type { Bar } from '../data/bars'
+import type { Bar, PeriodKey, PeriodMeta, Segment } from '../data/segments'
 
 export interface Candle {
   timestamp: number
@@ -32,6 +32,8 @@ export interface Score {
 export interface SessionResult {
   id: string
   code: string
+  period: PeriodKey
+  periodLabel: string
   startDate: string
   endDate: string
   initialCash: number
@@ -52,6 +54,8 @@ export interface EngineConfig {
   stampRate: number
   lotSize: number
   limitRate: number
+  period: PeriodKey
+  periodLabel: string
 }
 
 export const DEFAULT_CONFIG: EngineConfig = {
@@ -63,14 +67,26 @@ export const DEFAULT_CONFIG: EngineConfig = {
   stampRate: 0.0005,
   lotSize: 100,
   limitRate: 0.1,
+  period: 'day',
+  periodLabel: '日线',
+}
+
+/** 窗口长度随周期变化：月线一次练完整只股票就失去随机意义，必须调短。 */
+export function configForPeriod(meta: Pick<PeriodMeta, 'key' | 'label' | 'visible' | 'max'>): EngineConfig {
+  return {
+    ...DEFAULT_CONFIG,
+    period: meta.key,
+    periodLabel: meta.label,
+    visibleBars: meta.visible,
+    maxBars: meta.max,
+  }
 }
 
 const round2 = (n: number): number => Math.round(n * 100) / 100
 const clamp = (n: number, lo: number, hi: number): number => Math.min(hi, Math.max(lo, n))
-const randomInt = (max: number): number => Math.floor(Math.random() * max)
 
 /**
- * 回放引擎：唯一持有完整历史数据的地方。
+ * 回放引擎：唯一持有完整一局历史的地方。
  * 对 UI 只暴露 visible()（用序号做 timestamp，不含真实日期与股票代码），
  * 训练过程中任何视图都拿不到未来 K 线，复盘后才由 finish() 揭示答案。
  */
@@ -106,17 +122,26 @@ export class ReplayEngine {
     this.trackEquity()
   }
 
-  static create(
-    data: Record<string, Bar[]>,
-    config: EngineConfig = DEFAULT_CONFIG,
-  ): ReplayEngine {
+  static create(segment: Segment, config: EngineConfig = DEFAULT_CONFIG): ReplayEngine {
     const need = config.visibleBars + config.maxBars + 1
-    const codes = Object.keys(data).filter((code) => data[code].length >= need + 20)
-    if (codes.length === 0) throw new Error('离线数据不足，请重新运行取数脚本')
-    const code = codes[randomInt(codes.length)]
-    const all = data[code]
-    const start = randomInt(Math.max(1, all.length - need))
-    return new ReplayEngine(code, all.slice(start, start + need), config)
+    if (segment.b.length < need) {
+      throw new Error(`片段长度不足：需要 ${need} 根，实际 ${segment.b.length} 根`)
+    }
+    return new ReplayEngine(segment.c, segment.b.slice(0, need), config)
+  }
+
+  /** 时间标签形如 2024-03-05 或 2024-03-05 10:30，前 10 位即交易日。 */
+  private tradingDay(index: number): string {
+    return this.bars[index][0].slice(0, 10)
+  }
+
+  /** 昨收：分钟线要跨到上一个交易日，而不是简单取前一根。 */
+  private previousDayClose(): number {
+    const day = this.tradingDay(this.cursor)
+    for (let i = this.cursor - 1; i >= 0; i -= 1) {
+      if (this.tradingDay(i) !== day) return this.bars[i][4]
+    }
+    return this.cursor > 0 ? this.bars[this.cursor - 1][4] : this.bars[0][1]
   }
 
   private trackEquity(): void {
@@ -169,6 +194,10 @@ export class ReplayEngine {
     return this.trades.slice()
   }
 
+  get periodLabel(): string {
+    return this.config.periodLabel
+  }
+
   visible(): Candle[] {
     return this.bars.slice(0, this.cursor + 1).map((bar, i) => ({
       timestamp: i,
@@ -181,8 +210,7 @@ export class ReplayEngine {
   }
 
   private limitFlags(): { up: boolean; down: boolean } {
-    if (this.cursor === 0) return { up: false, down: false }
-    const prev = this.bars[this.cursor - 1][4]
+    const prev = this.previousDayClose()
     const close = this.bars[this.cursor][4]
     const rate = this.config.limitRate
     return {
@@ -194,8 +222,10 @@ export class ReplayEngine {
   advance(): boolean {
     if (this.ended) return false
     if (this.cursor < this.bars.length - 1) {
+      const previousDay = this.tradingDay(this.cursor)
       this.cursor += 1
-      this.lockedShares = 0
+      // T+1 按交易日解锁：同一交易日的分钟 K 线之间不允许卖出当日买入的股份
+      if (this.tradingDay(this.cursor) !== previousDay) this.lockedShares = 0
       this.trackEquity()
     }
     if (this.cursor >= this.bars.length - 1) this.ended = true
@@ -297,6 +327,8 @@ export class ReplayEngine {
     return {
       id: this.id,
       code: this.code,
+      period: this.config.period,
+      periodLabel: this.config.periodLabel,
       startDate: this.bars[0][0],
       endDate: this.bars[this.bars.length - 1][0],
       initialCash: this.config.initialCash,

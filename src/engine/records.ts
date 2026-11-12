@@ -1,10 +1,15 @@
+import type { PeriodKey } from '../data/segments'
 import type { SessionResult } from './replay'
 
-const KEY = 'kline-replay.records.v1'
+export const STORAGE_KEY = 'kline-replay.records.v1'
+const KEY = STORAGE_KEY
 
 export interface StoredRecord {
   id: string
   code: string
+  /** 旧版本记录没有这两个字段，读取时按「日线」兜底。 */
+  period?: PeriodKey
+  periodLabel?: string
   startDate: string
   endDate: string
   playedAt: number
@@ -19,6 +24,8 @@ export function toStored(r: SessionResult): StoredRecord {
   return {
     id: r.id,
     code: r.code,
+    period: r.period,
+    periodLabel: r.periodLabel,
     startDate: r.startDate,
     endDate: r.endDate,
     playedAt: r.playedAt,
@@ -55,6 +62,19 @@ export function saveRecord(record: StoredRecord): void {
   }
 }
 
+/** 供云端同步合并后整体写回；不删除任何一条传入的记录。 */
+export function replaceRecords(list: StoredRecord[]): void {
+  const sorted = list
+    .filter((item) => !!item && typeof item.id === 'string')
+    .sort((a, b) => b.playedAt - a.playedAt)
+    .slice(0, 500)
+  try {
+    localStorage.setItem(KEY, JSON.stringify(sorted))
+  } catch {
+    // 配额满或被系统清理时静默失败，导出仍可用
+  }
+}
+
 export function clearRecords(): void {
   try {
     localStorage.removeItem(KEY)
@@ -63,13 +83,58 @@ export function clearRecords(): void {
   }
 }
 
-export async function exportRecords(): Promise<'shared' | 'downloaded'> {
-  const payload = {
+export interface BackupPayload {
+  app: 'kline-replay'
+  version: number
+  exportedAt: string
+  records: StoredRecord[]
+}
+
+/** 手动导出与云端快照共用同一格式，云端文件可直接当备份导入。 */
+export function buildBackup(records: StoredRecord[]): BackupPayload {
+  return {
     app: 'kline-replay',
-    version: 1,
+    version: 2,
     exportedAt: new Date().toISOString(),
-    records: loadRecords(),
+    records,
   }
+}
+
+export function parseBackup(text: string): StoredRecord[] {
+  const parsed: unknown = JSON.parse(text)
+  const raw: unknown = Array.isArray(parsed)
+    ? parsed
+    : (parsed as { records?: unknown }).records
+  if (!Array.isArray(raw)) throw new Error('文件格式不对')
+  return raw.filter(
+    (item): item is StoredRecord =>
+      !!item && typeof item === 'object' &&
+      typeof (item as StoredRecord).id === 'string' &&
+      typeof (item as StoredRecord).playedAt === 'number',
+  )
+}
+
+/** 按 id 去重合并，本地记录优先；返回合并结果与新增条数。 */
+export function mergeRecords(
+  local: StoredRecord[],
+  incoming: StoredRecord[],
+): { list: StoredRecord[]; added: number } {
+  const known = new Set(local.map((item) => item.id))
+  const list = local.slice()
+  let added = 0
+  for (const item of incoming) {
+    if (!known.has(item.id)) {
+      list.push(item)
+      known.add(item.id)
+      added += 1
+    }
+  }
+  list.sort((a, b) => b.playedAt - a.playedAt)
+  return { list: list.slice(0, 500), added }
+}
+
+export async function exportRecords(): Promise<'shared' | 'downloaded'> {
+  const payload = buildBackup(loadRecords())
   const name = `kline-replay-${new Date().toISOString().slice(0, 10)}.json`
   const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' })
   const file = new File([blob], name, { type: 'application/json' })
@@ -97,25 +162,8 @@ export async function exportRecords(): Promise<'shared' | 'downloaded'> {
 }
 
 export async function importRecords(file: File): Promise<number> {
-  const text = await file.text()
-  const parsed: unknown = JSON.parse(text)
-  const incoming: unknown = Array.isArray(parsed)
-    ? parsed
-    : (parsed as { records?: unknown }).records
-  if (!Array.isArray(incoming)) throw new Error('文件格式不对')
-
-  const list = loadRecords()
-  const known = new Set(list.map((item) => item.id))
-  let added = 0
-  for (const item of incoming) {
-    const candidate = item as StoredRecord
-    if (candidate && typeof candidate === 'object' && typeof candidate.id === 'string' && !known.has(candidate.id)) {
-      list.push(candidate)
-      known.add(candidate.id)
-      added += 1
-    }
-  }
-  list.sort((a, b) => b.playedAt - a.playedAt)
-  localStorage.setItem(KEY, JSON.stringify(list.slice(0, 500)))
+  const incoming = parseBackup(await file.text())
+  const { list, added } = mergeRecords(loadRecords(), incoming)
+  replaceRecords(list)
   return added
 }

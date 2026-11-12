@@ -1,6 +1,20 @@
 import './style.css'
-import { BARS } from './data/bars'
-import { ReplayEngine, type Candle, type SessionResult, type Trade } from './engine/replay'
+import {
+  loadManifest,
+  loadPackage,
+  pickSegment,
+  type DataManifest,
+  type PeriodKey,
+  type PeriodMeta,
+  type SegmentPackage,
+} from './data/segments'
+import {
+  ReplayEngine,
+  configForPeriod,
+  type Candle,
+  type SessionResult,
+  type Trade,
+} from './engine/replay'
 import {
   clearRecords,
   exportRecords,
@@ -9,7 +23,19 @@ import {
   saveRecord,
   toStored,
 } from './engine/records'
-import { ChartView, indicatorLegend } from './ui/chart'
+import {
+  DEFAULT_PATH,
+  clearSyncConfig,
+  loadSyncConfig,
+  loadSyncStatus,
+  maskToken,
+  queueAutoSync,
+  saveSyncConfig,
+  startAutoSync,
+  syncNow,
+  type SyncConfig,
+} from './engine/sync'
+import { ChartView, formatBigNumberCN, indicatorLegend } from './ui/chart'
 import { renderCurve } from './ui/curve'
 
 const root = document.querySelector<HTMLDivElement>('#app')
@@ -32,11 +58,20 @@ const dateTime = (ts: number): string =>
     hour: '2-digit',
     minute: '2-digit',
   })
+const errText = (err: unknown): string => (err instanceof Error ? err.message : String(err))
 
 let view: View = 'train'
+let manifest: DataManifest | null = null
+let currentMeta: PeriodMeta | null = null
+let currentPackage: SegmentPackage | null = null
 let engine: ReplayEngine | null = null
 let result: SessionResult | null = null
 let chartView: ChartView | null = null
+let loading = true
+let loadingLabel = '离线数据'
+let loadError = ''
+let autoPlaying = false
+let autoTimer = 0
 let toastTimer = 0
 
 function toast(message: string): void {
@@ -51,7 +86,7 @@ function toast(message: string): void {
   el.textContent = message
   el.classList.add('show')
   window.clearTimeout(toastTimer)
-  toastTimer = window.setTimeout(() => el.classList.remove('show'), 2200)
+  toastTimer = window.setTimeout(() => el.classList.remove('show'), 2600)
 }
 
 const installGuide = standalone
@@ -66,7 +101,7 @@ const installGuide = standalone
   </div>
   <ol class="steps">
     <li><b>先让工具栏出现</b>：若底部只剩一条小胶囊或干脆不见了，向上滑一点点，或点一下屏幕最顶部的时间。</li>
-    <li><b>点地址栏旁的 <span class="kbd">⋯</span></b>（更多）→ 在弹出菜单选 <b>共享 / Share</b>。若你的 Safari 是「底部」或「顶部」布局，工具栏上直接就有方框箭头图标。</li>
+    <li><b>点地址栏旁的 <span class="kbd">⋯</span></b>（更多）→ 在弹出菜单选 <b>共享 / Share</b>。</li>
     <li><b>在分享列表里向下滑</b>，找到 <b>添加到主屏幕</b>，保持 <b>作为 Web App 打开</b> 开启，点右上角 <b>添加</b>。</li>
   </ol>
   <p class="guide-tip">列表里没有「添加到主屏幕」：拉到底 → <b>编辑操作</b> → 把它加进来。也请确认是在 Safari 里，而不是微信／聊天窗口的内嵌浏览器。</p>
@@ -81,6 +116,49 @@ function header(active: View): string {
       <button data-action="records" class="${active === 'records' ? 'on' : ''}">记录</button>
     </nav>
   </header>`
+}
+
+function periodBar(): string {
+  const items = manifest?.periods ?? []
+  const buttons = items
+    .map((p) => {
+      const active = p.key === currentMeta?.key
+      const disabled = !p.file
+      const label = disabled ? `${p.label}·待补` : p.label
+      // 不用 disabled：手机上点不到就不知道为什么，改为点击后给出补齐提示
+      return `<button data-period="${p.key}" class="${active ? 'on' : ''} ${disabled ? 'pending' : ''}">${label}</button>`
+    })
+    .join('')
+  return `<div class="period-bar">${buttons}</div>`
+}
+
+function quoteBar(candles: Candle[]): string {
+  const c = candles[candles.length - 1]
+  if (!c) return ''
+  const prev = candles[candles.length - 2]
+  const prevClose = prev?.close ?? c.open
+  const chg = prevClose ? (c.close / prevClose - 1) * 100 : 0
+  const cls = (v: number): string => (v >= prevClose ? 'up' : 'down')
+  return `<div class="quote" id="quote">
+    <span>开 <b class="${cls(c.open)}">${c.open.toFixed(2)}</b></span>
+    <span>高 <b class="${cls(c.high)}">${c.high.toFixed(2)}</b></span>
+    <span>低 <b class="${cls(c.low)}">${c.low.toFixed(2)}</b></span>
+    <span>收 <b class="${cls(c.close)}">${c.close.toFixed(2)}</b></span>
+    <span class="quote-chg ${chg >= 0 ? 'up' : 'down'}">${pct(chg)}</span>
+    <span>量 <b>${formatBigNumberCN(c.volume)}</b></span>
+  </div>`
+}
+
+function chartTools(): string {
+  return `<div class="chart-tools">
+    <button data-action="zoomIn">＋</button>
+    <button data-action="zoomOut">－</button>
+    <button data-action="panLeft">←</button>
+    <button data-action="panRight">→</button>
+    <button data-action="drawLine">趋势线</button>
+    <button data-action="drawHLine">水平线</button>
+    <button data-action="clearDraw">清除</button>
+  </div>`
 }
 
 function renderTrades(trades: Trade[]): string {
@@ -113,21 +191,29 @@ function mountChart(candles: Candle[]): void {
 }
 
 function renderTrain(): void {
-  if (!engine) engine = ReplayEngine.create(BARS)
+  if (!engine) startGame()
   const e = engine
+  if (!e) return
+  const candles = e.visible()
   app.innerHTML = `${header('train')}
     <main class="page">
+      ${periodBar()}
       <section class="stats">
         <div><span>可用资金</span><b id="s-cash">${money(e.cashValue)}</b></div>
         <div><span>持仓</span><b id="s-shares">${e.shareCount} 股</b></div>
         <div><span>浮动盈亏</span><b id="s-profit" class="${e.profit >= 0 ? 'up' : 'down'}">${pct(e.profitPct)}</b></div>
         <div><span>进度</span><b id="s-progress">${e.index + 1} / ${e.total}</b></div>
       </section>
-      <div class="indicator-legend" id="indicator-legend">${indicatorLegend(e.visible())}</div>
+      <div id="quote-wrap">${quoteBar(candles)}</div>
+      <div class="indicator-legend" id="indicator-legend">${indicatorLegend(candles)}</div>
       <div id="chart" class="chart"></div>
+      ${chartTools()}
       <p class="blind-note">股票名称与日期已隐藏 · 只能看到已推进的 K 线</p>
       <section class="controls">
-        <button class="btn primary" data-action="next">下一根 →</button>
+        <div class="btn-row">
+          <button class="btn primary" data-action="next">下一根 →</button>
+          <button class="btn" data-action="auto" id="auto-btn">${autoPlaying ? '暂停 ⏸' : '自动播放 ▶'}</button>
+        </div>
         <div class="btn-row">
           <button class="btn" data-action="buy">买 100</button>
           <button class="btn" data-action="buyAll">全仓买</button>
@@ -144,7 +230,7 @@ function renderTrain(): void {
         <div id="trade-list">${renderTrades(e.tradeList)}</div>
       </section>
     </main>`
-  mountChart(e.visible())
+  mountChart(candles)
 }
 
 function renderReview(): void {
@@ -159,7 +245,7 @@ function renderReview(): void {
       <section class="reveal">
         <div>
           <h2>复盘</h2>
-          <p class="reveal-line">标的 <b>${r.code}</b></p>
+          <p class="reveal-line">标的 <b>${r.code}</b> · <b>${r.periodLabel}</b></p>
           <p class="reveal-line">${r.startDate} ~ ${r.endDate}</p>
         </div>
         <div class="score-big"><span>评分</span><b>${r.score.total}</b></div>
@@ -174,6 +260,7 @@ function renderReview(): void {
       </section>
       <div class="indicator-legend" id="indicator-legend">${indicatorLegend(r.candles)}</div>
       <div id="chart" class="chart"></div>
+      ${chartTools()}
       <p class="blind-note">上图为完整走势；买卖点标记在下方资金曲线上</p>
       <section class="panel">
         <h3>资金曲线</h3>
@@ -192,14 +279,39 @@ function renderReview(): void {
   mountChart(r.candles)
 }
 
+function syncPanel(): string {
+  const cfg = loadSyncConfig()
+  const status = loadSyncStatus()
+  const state = !cfg
+    ? '未配置 · 需要一个私有仓与细粒度 PAT'
+    : `已配置 <b>${cfg.owner}/${cfg.repo}</b> · 凭证 ${maskToken(cfg.token)} · 上次 ${status.lastAt ? dateTime(status.lastAt) : '尚未同步'}${status.pending ? ' · <b class="down">待重试</b>' : ''}`
+  return `<section class="panel">
+    <h3>远程仓库同步</h3>
+    <p class="tip">记录先写本机，再自动备份到你的私有仓。请在 GitHub 生成一个<b>细粒度 PAT</b>，只授予该仓库的 Contents 读写权限；凭证仅存这台手机，不进代码也不进公开仓。断网照常训练，恢复后自动补传。</p>
+    <div class="sync-state">${state}${status.lastError ? `<span class="sync-err">上次失败：${status.lastError}</span>` : ''}</div>
+    <form class="field-grid" id="sync-form" autocomplete="off">
+      <label>用户名 / 组织<input id="sync-owner" type="text" placeholder="jancy0528" value="${cfg?.owner ?? ''}" /></label>
+      <label>私有仓库名<input id="sync-repo" type="text" placeholder="kline-replay-data" value="${cfg?.repo ?? ''}" /></label>
+      <label>文件路径<input id="sync-path" type="text" placeholder="${DEFAULT_PATH}" value="${cfg?.path ?? ''}" /></label>
+      <label>细粒度 PAT<input id="sync-token" type="password" autocomplete="off" placeholder="${cfg ? '留空则沿用已存凭证' : 'github_pat_…'}" /></label>
+    </form>
+    <div class="btn-row sync-buttons">
+      <button class="btn" data-action="syncSave">保存并同步</button>
+      <button class="btn" data-action="syncNow">立即同步</button>
+      <button class="btn" data-action="syncRestore">从云端恢复</button>
+      <button class="btn ghost" data-action="syncClear">清除凭证</button>
+    </div>
+  </section>`
+}
+
 function renderRecords(): void {
   const list = loadRecords()
   const rows = list.length
     ? list
         .map(
           (r) => `<div class="record">
-            <div><b>${r.code}</b><span>${dateTime(r.playedAt)}</span></div>
-            <div class="record-mid">${r.startDate} ~ ${r.endDate}</div>
+            <div><b>${r.code}</b><span>${r.periodLabel ?? '日线'} · ${dateTime(r.playedAt)}</span></div>
+            <div class="record-mid">${r.startDate.slice(0, 10)} ~ ${r.endDate.slice(0, 10)}</div>
             <div class="record-right">
               <b class="${r.score.pnlPct >= 0 ? 'up' : 'down'}">${pct(r.score.pnlPct)}</b>
               <span>评分 ${r.score.total}</span>
@@ -215,13 +327,14 @@ function renderRecords(): void {
         <h3>训练记录（${list.length}）</h3>
         <div class="records">${rows}</div>
       </section>
+      ${syncPanel()}
       <section class="panel">
-        <h3>备份与恢复</h3>
-        <p class="tip">记录只存在这台设备的浏览器里。iOS 主屏应用长期不用时数据可能被系统清理，请定期导出。</p>
+        <h3>本地文件备份</h3>
+        <p class="tip">记录只存在这台设备的浏览器里。iOS 主屏应用长期不用时数据可能被系统清理，请定期导出，或开启上面的远程同步。</p>
         <div class="btn-row">
           <button class="btn" data-action="export">导出 JSON</button>
           <button class="btn" data-action="import">导入 JSON</button>
-          <button class="btn ghost" data-action="clear">清空</button>
+          <button class="btn ghost" data-action="clear">清空本机</button>
         </div>
         <input id="import-file" type="file" accept="application/json,.json" hidden />
       </section>
@@ -230,20 +343,74 @@ function renderRecords(): void {
     </main>`
 }
 
-function render(): void {
+function renderShell(): void {
   chartView?.destroy()
   chartView = null
+  if (loadError) {
+    app.innerHTML = `${header('train')}<main class="page"><section class="panel"><h3>数据加载失败</h3><p class="tip">${loadError}</p><p class="tip">离线数据随站点一起部署，请确认网络可用后重新打开；若在开发环境，先运行数据生成脚本。</p><button class="btn" data-action="retry">重试</button></section></main>`
+    return
+  }
+  if (loading) {
+    app.innerHTML = `${header('train')}<main class="page"><div class="loading"><span class="spinner"></span>正在加载${loadingLabel}…</div></main>`
+    return
+  }
   if (view === 'train') renderTrain()
   else if (view === 'review') renderReview()
   else renderRecords()
   window.scrollTo(0, 0)
 }
 
+function render(): void {
+  renderShell()
+}
+
+function startGame(): void {
+  if (!currentPackage || !currentMeta) return
+  stopAutoPlay()
+  engine = ReplayEngine.create(pickSegment(currentPackage), configForPeriod(currentMeta))
+  result = null
+}
+
+function stopAutoPlay(): void {
+  autoPlaying = false
+  window.clearInterval(autoTimer)
+  autoTimer = 0
+  const btn = document.getElementById('auto-btn')
+  if (btn) btn.textContent = '自动播放 ▶'
+}
+
+function toggleAutoPlay(): void {
+  if (autoPlaying) {
+    stopAutoPlay()
+    return
+  }
+  autoPlaying = true
+  const btn = document.getElementById('auto-btn')
+  if (btn) btn.textContent = '暂停 ⏸'
+  autoTimer = window.setInterval(() => {
+    if (!engine || view !== 'train') {
+      stopAutoPlay()
+      return
+    }
+    const before = engine.visible().length
+    const hasMore = engine.advance()
+    const after = engine.visible()
+    updateTrainUI(after.length > before ? after[after.length - 1] : undefined)
+    if (!hasMore) {
+      stopAutoPlay()
+      toast('已到最后一根，点「结束并复盘」看结果')
+    }
+  }, 650)
+}
+
 function updateTrainUI(newBar?: Candle): void {
   if (!engine) return
   if (newBar) chartView?.appendBar(newBar)
+  const candles = engine.visible()
   const legend = document.getElementById('indicator-legend')
-  if (legend) legend.innerHTML = indicatorLegend(engine.visible())
+  if (legend) legend.innerHTML = indicatorLegend(candles)
+  const quote = document.getElementById('quote-wrap')
+  if (quote) quote.innerHTML = quoteBar(candles)
   const set = (id: string, text: string, cls?: string): void => {
     const el = document.getElementById(id)
     if (!el) return
@@ -264,6 +431,43 @@ function applyTrade(res: { ok: boolean; reason?: string } | undefined): void {
   updateTrainUI()
 }
 
+function readSyncForm(): SyncConfig {
+  const cfg = loadSyncConfig()
+  const val = (selector: string): string =>
+    document.querySelector<HTMLInputElement>(selector)?.value.trim() ?? ''
+  return {
+    owner: val('#sync-owner') || cfg?.owner || '',
+    repo: val('#sync-repo') || cfg?.repo || '',
+    path: val('#sync-path') || cfg?.path || DEFAULT_PATH,
+    token: val('#sync-token') || cfg?.token || '',
+  }
+}
+
+async function switchPeriod(key: PeriodKey): Promise<void> {
+  if (!manifest || key === currentMeta?.key) return
+  const meta = manifest.periods.find((p) => p.key === key)
+  if (!meta) return
+  if (!meta.file) {
+    toast(`${meta.label} 数据待补：运行取数脚本后重新生成片段包即可启用`)
+    return
+  }
+  loading = true
+  loadingLabel = `${meta.label}训练`
+  render()
+  try {
+    const pkg = await loadPackage(meta)
+    currentMeta = meta
+    currentPackage = pkg
+    startGame()
+    view = 'train'
+  } catch (err) {
+    toast(`加载失败：${errText(err)}`)
+  } finally {
+    loading = false
+    render()
+  }
+}
+
 async function handle(action: string): Promise<void> {
   switch (action) {
     case 'train':
@@ -276,9 +480,14 @@ async function handle(action: string): Promise<void> {
       view = 'records'
       render()
       return
+    case 'retry':
+      loadError = ''
+      loading = true
+      render()
+      await boot()
+      return
     case 'new':
-      engine = ReplayEngine.create(BARS)
-      result = null
+      startGame()
       view = 'train'
       render()
       return
@@ -291,6 +500,32 @@ async function handle(action: string): Promise<void> {
       if (!hasMore) toast('已到最后一根，点「结束并复盘」看结果')
       return
     }
+    case 'auto':
+      toggleAutoPlay()
+      return
+    case 'zoomIn':
+      chartView?.zoom(1.25)
+      return
+    case 'zoomOut':
+      chartView?.zoom(0.8)
+      return
+    case 'panLeft':
+      chartView?.pan(-6)
+      return
+    case 'panRight':
+      chartView?.pan(6)
+      return
+    case 'drawLine':
+      chartView?.startDrawing('segment')
+      toast('在图上点两下画趋势线')
+      return
+    case 'drawHLine':
+      chartView?.startDrawing('horizontalStraightLine')
+      toast('在图上点一下画水平线')
+      return
+    case 'clearDraw':
+      chartView?.clearDrawings()
+      return
     case 'buy':
       applyTrade(engine?.buy(100))
       return
@@ -305,8 +540,10 @@ async function handle(action: string): Promise<void> {
       return
     case 'finish': {
       if (!engine) return
+      stopAutoPlay()
       result = engine.finish()
       saveRecord(toStored(result))
+      queueAutoSync()
       view = 'review'
       render()
       return
@@ -320,14 +557,57 @@ async function handle(action: string): Promise<void> {
       }
       return
     }
-    case 'import': {
+    case 'import':
       document.querySelector<HTMLInputElement>('#import-file')?.click()
       return
-    }
     case 'clear':
-      if (window.confirm('确定清空本机全部训练记录？建议先导出备份。')) {
+      if (window.confirm('确定清空本机全部训练记录？建议先导出或开启远程同步。')) {
         clearRecords()
-        toast('已清空')
+        toast('已清空本机记录')
+        render()
+      }
+      return
+    case 'syncSave': {
+      const cfg = readSyncForm()
+      if (!cfg.owner || !cfg.repo || !cfg.token) {
+        toast('请填写用户名、仓库名和 PAT')
+        return
+      }
+      saveSyncConfig(cfg)
+      toast('凭证已保存，正在同步…')
+      const res = await syncNow(cfg)
+      toast(res.message)
+      render()
+      return
+    }
+    case 'syncNow': {
+      const cfg = loadSyncConfig()
+      if (!cfg) {
+        toast('请先填写凭证并点「保存并同步」')
+        return
+      }
+      toast('正在同步…')
+      const res = await syncNow(cfg)
+      toast(res.message)
+      render()
+      return
+    }
+    case 'syncRestore': {
+      const cfg = loadSyncConfig()
+      if (!cfg) {
+        toast('请先填写凭证并点「保存并同步」')
+        return
+      }
+      toast('正在从云端恢复…')
+      const res = await syncNow(cfg, 'restore')
+      toast(res.message)
+      render()
+      return
+    }
+    case 'syncClear':
+      if (window.confirm('清除本机保存的同步凭证？云端记录不会被删除。')) {
+        clearSyncConfig()
+        toast('已清除凭证')
         render()
       }
       return
@@ -337,8 +617,15 @@ async function handle(action: string): Promise<void> {
 }
 
 app.addEventListener('click', (event) => {
-  const target = (event.target as HTMLElement).closest<HTMLElement>('[data-action]')
-  if (target) void handle(target.dataset.action ?? '')
+  const target = (event.target as HTMLElement).closest<HTMLElement>('[data-action],[data-period]')
+  if (!target) return
+  if (target.dataset.period) void switchPeriod(target.dataset.period as PeriodKey)
+  else if (target.dataset.action) void handle(target.dataset.action)
+})
+
+// 同步设置用 form 包着密码框（消除浏览器告警），但绝不允许回车提交刷新页面
+document.addEventListener('submit', (event) => {
+  if ((event.target as HTMLElement).id === 'sync-form') event.preventDefault()
 })
 
 document.addEventListener('change', (event) => {
@@ -349,13 +636,39 @@ document.addEventListener('change', (event) => {
     .then((count) => {
       toast(`导入 ${count} 条记录`)
       if (view === 'records') render()
+      queueAutoSync()
     })
     .catch(() => toast('导入失败：文件格式不对'))
   input.value = ''
 })
 
 window.addEventListener('resize', () => chartView?.resize())
-render()
+
+async function boot(): Promise<void> {
+  loading = true
+  loadError = ''
+  render()
+  try {
+    manifest = await loadManifest()
+    const first =
+      manifest.periods.find((p) => p.key === 'day' && p.file) ??
+      manifest.periods.find((p) => p.file)
+    if (!first) throw new Error('没有可用的训练片段包')
+    loadingLabel = `${first.label}训练`
+    currentMeta = first
+    currentPackage = await loadPackage(first)
+    startGame()
+    loading = false
+    render()
+    startAutoSync()
+  } catch (err) {
+    loading = false
+    loadError = errText(err)
+    render()
+  }
+}
+
+void boot()
 
 // 只在生产构建注册，避免开发时被旧缓存挡住热更新
 if ('serviceWorker' in navigator && import.meta.env.PROD) {

@@ -9,7 +9,9 @@
     "build": "vite build",
     "typecheck": "tsc --noEmit",
     "preview": "vite preview",
-    "fetch": "python tools/fetch_baostock.py"
+    "fetch": "python tools/fetch_baostock.py",
+    "data:minutes": "python tools/fetch_minutes.py",
+    "data:build": "python tools/build_segments.py"
   },
   "dependencies": {
     "klinecharts": "^10.1.0"

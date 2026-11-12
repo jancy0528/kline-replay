@@ -151,6 +151,28 @@ export class ChartView {
     else this.chart?.resetData()
   }
 
+  /** 放大/缩小：直接改每根 K 线占用的像素宽度。 */
+  zoom(factor: number): void {
+    if (!this.chart) return
+    const space = this.chart.getBarSpace().bar
+    this.chart.setBarSpace(Math.max(2, Math.min(40, space * factor)))
+  }
+
+  /** 左右平移，单位是「根」。 */
+  pan(bars: number): void {
+    if (!this.chart) return
+    this.chart.scrollByDistance(bars * this.chart.getBarSpace().bar)
+  }
+
+  /** 进入画线模式，由用户在图上点两下完成。 */
+  startDrawing(name: string): void {
+    this.chart?.createOverlay(name)
+  }
+
+  clearDrawings(): void {
+    this.chart?.removeOverlay()
+  }
+
   resize(): void {
     this.chart?.resize()
   }
