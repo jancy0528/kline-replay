@@ -54,7 +54,8 @@ def fetch(bs, code: str, start: str, end: str, adjust: str) -> list[list]:
         try:
             bars.append([
                 row[0],
-                float(row[2]), float(row[3]), float(row[4]), float(row[5]),
+                round(float(row[2]), 3), round(float(row[3]), 3),
+                round(float(row[4]), 3), round(float(row[5]), 3),
                 int(float(row[7] or 0)),
             ])
         except (ValueError, IndexError):
