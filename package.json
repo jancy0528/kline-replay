@@ -1,0 +1,21 @@
+{
+  "name": "kline-replay",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "description": "离线历史K线逐根回放训练（单机 PWA）",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "typecheck": "tsc --noEmit",
+    "preview": "vite preview",
+    "fetch": "python tools/fetch_baostock.py"
+  },
+  "dependencies": {
+    "klinecharts": "^10.1.0"
+  },
+  "devDependencies": {
+    "typescript": "^7.0.2",
+    "vite": "^8.3.8"
+  }
+}

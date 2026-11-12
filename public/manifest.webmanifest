@@ -1,0 +1,26 @@
+{
+  "name": "K线回放训练",
+  "short_name": "K线回放",
+  "description": "离线历史K线逐根回放训练，数据全部保存在本机",
+  "lang": "zh-CN",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "any",
+  "background_color": "#11151f",
+  "theme_color": "#11151f",
+  "icons": [
+    {
+      "src": "./icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "./icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
+  ]
+}
