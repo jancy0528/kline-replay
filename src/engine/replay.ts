@@ -1,4 +1,15 @@
 import type { Bar, PeriodKey, PeriodMeta, Segment } from '../data/segments'
+import {
+  DEFAULT_FEE_SCHEDULE,
+  ZERO_FEES,
+  addFees,
+  classifyInstrument,
+  computeFees,
+  type FeeBreakdown,
+  type FeeSchedule,
+  type InstrumentKind,
+  type InstrumentRule,
+} from './fees'
 
 export interface Candle {
   timestamp: number
@@ -16,6 +27,9 @@ export interface Trade {
   price: number
   shares: number
   fee: number
+  /** 旧版本记录没有以下三个字段，展示时按 fee 兜底。 */
+  amount?: number
+  fees?: FeeBreakdown
   pnl: number | null
 }
 
@@ -43,15 +57,18 @@ export interface SessionResult {
   equityCurve: number[]
   candles: Candle[]
   playedAt: number
+  /** 本局适用的品种与费率快照：换费率后历史记录仍可核对当时口径。 */
+  instrumentKind: InstrumentKind
+  feeRule: InstrumentRule
+  feeTotal: FeeBreakdown
 }
 
 export interface EngineConfig {
   initialCash: number
   visibleBars: number
   maxBars: number
-  feeRate: number
-  minFee: number
-  stampRate: number
+  fees: FeeSchedule
+  kind: InstrumentKind
   lotSize: number
   limitRate: number
   period: PeriodKey
@@ -62,9 +79,8 @@ export const DEFAULT_CONFIG: EngineConfig = {
   initialCash: 100000,
   visibleBars: 60,
   maxBars: 80,
-  feeRate: 0.0003,
-  minFee: 5,
-  stampRate: 0.0005,
+  fees: DEFAULT_FEE_SCHEDULE,
+  kind: 'stock',
   lotSize: 100,
   limitRate: 0.1,
   period: 'day',
@@ -72,9 +88,13 @@ export const DEFAULT_CONFIG: EngineConfig = {
 }
 
 /** 窗口长度随周期变化：月线一次练完整只股票就失去随机意义，必须调短。 */
-export function configForPeriod(meta: Pick<PeriodMeta, 'key' | 'label' | 'visible' | 'max'>): EngineConfig {
+export function configForPeriod(
+  meta: Pick<PeriodMeta, 'key' | 'label' | 'visible' | 'max'>,
+  fees: FeeSchedule = DEFAULT_FEE_SCHEDULE,
+): EngineConfig {
   return {
     ...DEFAULT_CONFIG,
+    fees,
     period: meta.key,
     periodLabel: meta.label,
     visibleBars: meta.visible,
@@ -104,6 +124,7 @@ export class ReplayEngine {
   private ended = false
   private wins = 0
   private closedTrades = 0
+  private feeTotal: FeeBreakdown = { ...ZERO_FEES }
 
   readonly id: string
   readonly code: string
@@ -127,7 +148,9 @@ export class ReplayEngine {
     if (segment.b.length < need) {
       throw new Error(`片段长度不足：需要 ${need} 根，实际 ${segment.b.length} 根`)
     }
-    return new ReplayEngine(segment.c, segment.b.slice(0, need), config)
+    // 按标的代码推断品种，决定佣金档与是否征印花税/过户费
+    const kind = classifyInstrument(segment.c)
+    return new ReplayEngine(segment.c, segment.b.slice(0, need), { ...config, kind })
   }
 
   /** 时间标签形如 2024-03-05 或 2024-03-05 10:30，前 10 位即交易日。 */
@@ -152,6 +175,10 @@ export class ReplayEngine {
       const drawdown = ((this.peakEquity - value) / this.peakEquity) * 100
       if (drawdown > this.maxDrawdown) this.maxDrawdown = drawdown
     }
+  }
+
+  private rule(): InstrumentRule {
+    return this.config.fees[this.config.kind] ?? this.config.fees.stock
   }
 
   get index(): number {
@@ -198,6 +225,18 @@ export class ReplayEngine {
     return this.config.periodLabel
   }
 
+  get instrumentKind(): InstrumentKind {
+    return this.config.kind
+  }
+
+  get feeRule(): InstrumentRule {
+    return this.rule()
+  }
+
+  get totalFees(): FeeBreakdown {
+    return { ...this.feeTotal }
+  }
+
   visible(): Candle[] {
     return this.bars.slice(0, this.cursor + 1).map((bar, i) => ({
       timestamp: i,
@@ -241,21 +280,24 @@ export class ReplayEngine {
 
     const price = this.bars[this.cursor][4]
     const amount = qty * price
-    const fee = Math.max(this.config.minFee, amount * this.config.feeRate)
-    if (this.cash + 0.001 < amount + fee) return { ok: false, reason: '可用资金不足' }
+    const fees = computeFees(amount, 'buy', this.config.kind, this.config.fees)
+    if (this.cash + 0.001 < amount + fees.total) return { ok: false, reason: '可用资金不足' }
 
-    const totalCost = this.avgCost * this.shares + amount + fee
-    this.cash -= amount + fee
+    const totalCost = this.avgCost * this.shares + amount + fees.total
+    this.cash -= amount + fees.total
     this.shares += qty
     this.lockedShares += qty
     this.avgCost = totalCost / this.shares
+    this.feeTotal = addFees(this.feeTotal, fees)
     this.trades.push({
       index: this.cursor,
       date: this.bars[this.cursor][0],
       side: 'buy',
       price: round2(price),
       shares: qty,
-      fee: round2(fee),
+      fee: fees.total,
+      amount: round2(amount),
+      fees,
       pnl: null,
     })
     return { ok: true }
@@ -275,34 +317,44 @@ export class ReplayEngine {
 
     const price = this.bars[this.cursor][4]
     const amount = qty * price
-    const fee =
-      Math.max(this.config.minFee, amount * this.config.feeRate) +
-      amount * this.config.stampRate
-    const pnl = (price - this.avgCost) * qty - fee
-    this.cash += amount - fee
+    const fees = computeFees(amount, 'sell', this.config.kind, this.config.fees)
+    const pnl = (price - this.avgCost) * qty - fees.total
+    this.cash += amount - fees.total
     this.shares -= qty
     this.closedTrades += 1
     if (pnl > 0) this.wins += 1
     if (this.shares === 0) this.avgCost = 0
+    this.feeTotal = addFees(this.feeTotal, fees)
     this.trades.push({
       index: this.cursor,
       date: this.bars[this.cursor][0],
       side: 'sell',
       price: round2(price),
       shares: qty,
-      fee: round2(fee),
+      fee: fees.total,
+      amount: round2(amount),
+      fees,
       pnl: round2(pnl),
     })
     return { ok: true }
   }
 
+  /** 精确求解：最低佣金让费用非线性，先估上界再逐手回退，保证全仓买入不会买超。 */
   maxBuyable(): number {
     const price = this.bars[this.cursor][4]
     const lot = this.config.lotSize
-    const affordable = Math.floor(
-      (this.cash - this.config.minFee) / (price * (1 + this.config.feeRate) * lot),
+    const rule = this.rule()
+    let lots = Math.floor(
+      this.cash / (price * (1 + rule.commissionRate + rule.transferRate) * lot),
     )
-    return Math.max(0, affordable * lot)
+    while (lots > 0) {
+      const qty = lots * lot
+      const amount = qty * price
+      const fees = computeFees(amount, 'buy', this.config.kind, this.config.fees)
+      if (this.cash + 0.001 >= amount + fees.total) return qty
+      lots -= 1
+    }
+    return 0
   }
 
   finish(): SessionResult {
@@ -353,6 +405,9 @@ export class ReplayEngine {
         volume: bar[5],
       })),
       playedAt: this.startedAt,
+      instrumentKind: this.config.kind,
+      feeRule: { ...this.rule() },
+      feeTotal: { ...this.feeTotal },
     }
   }
 }

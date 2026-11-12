@@ -1,4 +1,5 @@
 import type { PeriodKey } from '../data/segments'
+import type { FeeBreakdown, InstrumentKind, InstrumentRule } from './fees'
 import type { SessionResult } from './replay'
 
 export const STORAGE_KEY = 'kline-replay.records.v1'
@@ -18,6 +19,10 @@ export interface StoredRecord {
   score: SessionResult['score']
   trades: SessionResult['trades']
   equityCurve: number[]
+  /** 旧版本记录没有以下三个字段，读取时按「股票」与总费用兜底。 */
+  instrumentKind?: InstrumentKind
+  feeRule?: InstrumentRule
+  feeTotal?: FeeBreakdown
 }
 
 export function toStored(r: SessionResult): StoredRecord {
@@ -34,6 +39,9 @@ export function toStored(r: SessionResult): StoredRecord {
     score: r.score,
     trades: r.trades,
     equityCurve: r.equityCurve,
+    instrumentKind: r.instrumentKind,
+    feeRule: r.feeRule,
+    feeTotal: r.feeTotal,
   }
 }
 

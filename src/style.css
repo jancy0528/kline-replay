@@ -420,9 +420,6 @@ h1 {
 }
 
 .trade {
-  display: flex;
-  align-items: center;
-  gap: 10px;
   padding: 9px 0;
   border-top: 1px solid var(--line);
   color: var(--muted);
@@ -430,7 +427,80 @@ h1 {
 }
 
 .trade:first-child { border-top: 0; }
-.trade b { margin-left: auto; font-variant-numeric: tabular-nums; }
+
+.trade-main {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.trade-main b { margin-left: auto; font-variant-numeric: tabular-nums; }
+
+.trade-fee {
+  margin: 4px 0 0 34px;
+  color: var(--muted);
+  font-size: 11px;
+  line-height: 1.45;
+  font-variant-numeric: tabular-nums;
+  opacity: 0.82;
+}
+
+/* 费用提示与明细 */
+.fee-note {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 8px;
+  margin: 8px 2px 0;
+  color: var(--muted);
+  font-size: 11px;
+  line-height: 1.5;
+  font-variant-numeric: tabular-nums;
+}
+
+.fee-note b { color: var(--text); font-weight: 600; }
+
+.fee-kind {
+  padding: 1px 6px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  color: var(--text);
+}
+
+.fee-total { margin-left: auto; }
+
+.fee-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 1px;
+  overflow: hidden;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--line);
+}
+
+.fee-grid div {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 10px 12px;
+  background: var(--panel);
+}
+
+.fee-grid span { color: var(--muted); font-size: 11px; }
+.fee-grid b { font-size: 15px; font-variant-numeric: tabular-nums; }
+.fee-tip { margin: 10px 0 0; }
+
+.badge {
+  margin-left: 6px;
+  padding: 2px 7px;
+  border-radius: 999px;
+  background: rgba(110, 168, 254, 0.14);
+  color: #6ea8fe;
+  font-size: 10px;
+  font-weight: 500;
+  vertical-align: middle;
+}
 
 .tag {
   flex: 0 0 auto;

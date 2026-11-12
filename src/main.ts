@@ -24,6 +24,17 @@ import {
   toStored,
 } from './engine/records'
 import {
+  KIND_LABEL,
+  fromWan,
+  hasCustomFees,
+  loadFeeSchedule,
+  resetFeeSchedule,
+  saveFeeSchedule,
+  toWan,
+  type FeeBreakdown,
+  type FeeSchedule,
+} from './engine/fees'
+import {
   DEFAULT_PATH,
   clearSyncConfig,
   loadSyncConfig,
@@ -50,6 +61,8 @@ const standalone =
 
 const nf = new Intl.NumberFormat('zh-CN', { maximumFractionDigits: 0 })
 const money = (n: number): string => `¥${nf.format(n)}`
+const yuan2 = (n: number): string => `¥${n.toFixed(2)}`
+const wanLabel = (rate: number): string => `万${toWan(rate)}`
 const pct = (n: number): string => `${n >= 0 ? '+' : ''}${n.toFixed(2)}%`
 const dateTime = (ts: number): string =>
   new Date(ts).toLocaleString('zh-CN', {
@@ -59,6 +72,8 @@ const dateTime = (ts: number): string =>
     minute: '2-digit',
   })
 const errText = (err: unknown): string => (err instanceof Error ? err.message : String(err))
+const feeParts = (f: FeeBreakdown): string =>
+  `佣金 ${yuan2(f.commission)} ＋ 印花 ${yuan2(f.stampDuty)} ＋ 过户 ${yuan2(f.transferFee)}`
 
 let view: View = 'train'
 let manifest: DataManifest | null = null
@@ -161,6 +176,16 @@ function chartTools(): string {
   </div>`
 }
 
+/** 训练页顶部的费率提示：品种、佣金档、税费规则、本局累计费用。 */
+function feeNote(e: ReplayEngine): string {
+  const r = e.feeRule
+  const stamp = r.stampDutyRate ? `${wanLabel(r.stampDutyRate)}·卖出` : '免'
+  const transfer = r.transferRate ? `${wanLabel(r.transferRate)}·双向` : '免'
+  return `<span class="fee-kind">${KIND_LABEL[e.instrumentKind]}</span>
+    <span>佣金 ${wanLabel(r.commissionRate)}（最低 ${yuan2(r.minCommission)}）· 印花 ${stamp} · 过户 ${transfer}</span>
+    <span class="fee-total">本局费用 <b id="s-fees">${yuan2(e.totalFees.total)}</b></span>`
+}
+
 function renderTrades(trades: Trade[]): string {
   if (trades.length === 0) return '<p class="empty">还没有操作</p>'
   return trades
@@ -172,11 +197,17 @@ function renderTrades(trades: Trade[]): string {
         t.pnl === null
           ? ''
           : `<b class="${t.pnl >= 0 ? 'up' : 'down'}">${t.pnl >= 0 ? '+' : ''}${nf.format(t.pnl)}</b>`
+      const feeLine = t.fees
+        ? `费用 ${yuan2(t.fees.total)} ＝ ${feeParts(t.fees)}`
+        : `费用 ${yuan2(t.fee)}`
       return `<div class="trade">
-        <span class="tag ${t.side}">${t.side === 'buy' ? '买' : '卖'}</span>
-        <span>第 ${t.index + 1} 根</span>
-        <span>${t.shares} 股 @ ${t.price.toFixed(3)}</span>
-        ${pnl}
+        <div class="trade-main">
+          <span class="tag ${t.side}">${t.side === 'buy' ? '买' : '卖'}</span>
+          <span>第 ${t.index + 1} 根</span>
+          <span>${t.shares} 股 @ ${t.price.toFixed(3)}</span>
+          ${pnl}
+        </div>
+        <div class="trade-fee">${feeLine}</div>
       </div>`
     })
     .join('')
@@ -209,6 +240,7 @@ function renderTrain(): void {
       <div id="chart" class="chart"></div>
       ${chartTools()}
       <p class="blind-note">股票名称与日期已隐藏 · 只能看到已推进的 K 线</p>
+      <p class="fee-note" id="fee-note">${feeNote(e)}</p>
       <section class="controls">
         <div class="btn-row">
           <button class="btn primary" data-action="next">下一根 →</button>
@@ -240,6 +272,12 @@ function renderReview(): void {
     renderTrain()
     return
   }
+  const stampText = r.feeRule.stampDutyRate
+    ? `${wanLabel(r.feeRule.stampDutyRate)}（卖出单边）`
+    : '免征'
+  const transferText = r.feeRule.transferRate
+    ? `${wanLabel(r.feeRule.transferRate)}（双向）`
+    : '免征'
   app.innerHTML = `${header('train')}
     <main class="page">
       <section class="reveal">
@@ -263,6 +301,16 @@ function renderReview(): void {
       ${chartTools()}
       <p class="blind-note">上图为完整走势；买卖点标记在下方资金曲线上</p>
       <section class="panel">
+        <h3>本局手续费</h3>
+        <div class="fee-grid">
+          <div><span>合计 · 占初始资金 ${((r.feeTotal.total / r.initialCash) * 100).toFixed(2)}%</span><b>${yuan2(r.feeTotal.total)}</b></div>
+          <div><span>券商佣金</span><b>${yuan2(r.feeTotal.commission)}</b></div>
+          <div><span>印花税</span><b>${yuan2(r.feeTotal.stampDuty)}</b></div>
+          <div><span>过户费</span><b>${yuan2(r.feeTotal.transferFee)}</b></div>
+        </div>
+        <p class="tip fee-tip">${KIND_LABEL[r.instrumentKind]} · 佣金 ${wanLabel(r.feeRule.commissionRate)}（单笔最低 ${yuan2(r.feeRule.minCommission)}）· 印花 ${stampText} · 过户 ${transferText}。费用已在每笔成交时从资金实时扣除。</p>
+      </section>
+      <section class="panel">
         <h3>资金曲线</h3>
         ${renderCurve(r.equityCurve, r.trades)}
         <p class="legend"><i class="dot buy"></i>买入 <i class="dot sell"></i>卖出</p>
@@ -277,6 +325,27 @@ function renderReview(): void {
       </section>
     </main>`
   mountChart(r.candles)
+}
+
+function feePanel(): string {
+  const s = loadFeeSchedule()
+  const w = (rate: number): string => String(toWan(rate))
+  return `<section class="panel">
+    <h3>交易费率设置${hasCustomFees() ? '<span class="badge">已自定义</span>' : ''}</h3>
+    <p class="tip">按你的券商实际费率计费：佣金买卖双向、单笔不足最低按最低收；印花税仅卖出股票、过户费双向，<b>场内基金与封基免此二项</b>。修改后<b>下一局生效</b>，已完成记录保留当时费率。</p>
+    <form class="field-grid" id="fee-form" autocomplete="off">
+      <label>股票佣金（万分之）<input id="fee-stock" type="number" inputmode="decimal" step="0.01" min="0" max="30" value="${w(s.stock.commissionRate)}" /></label>
+      <label>封基佣金（万分之）<input id="fee-closed" type="number" inputmode="decimal" step="0.01" min="0" max="30" value="${w(s.closed_fund.commissionRate)}" /></label>
+      <label>场内基金佣金（万分之）<input id="fee-fund" type="number" inputmode="decimal" step="0.01" min="0" max="30" value="${w(s.exchange_fund.commissionRate)}" /></label>
+      <label>单笔最低佣金（元）<input id="fee-min" type="number" inputmode="decimal" step="0.01" min="0" max="1000" value="${s.stock.minCommission}" /></label>
+      <label>股票印花税（万分之·卖出）<input id="fee-stamp" type="number" inputmode="decimal" step="0.01" min="0" max="30" value="${w(s.stock.stampDutyRate)}" /></label>
+      <label>股票过户费（万分之·双向）<input id="fee-transfer" type="number" inputmode="decimal" step="0.001" min="0" max="30" value="${w(s.stock.transferRate)}" /></label>
+    </form>
+    <div class="btn-row">
+      <button class="btn" data-action="feeSave">保存费率</button>
+      <button class="btn ghost" data-action="feeReset">恢复默认</button>
+    </div>
+  </section>`
 }
 
 function syncPanel(): string {
@@ -314,7 +383,7 @@ function renderRecords(): void {
             <div class="record-mid">${r.startDate.slice(0, 10)} ~ ${r.endDate.slice(0, 10)}</div>
             <div class="record-right">
               <b class="${r.score.pnlPct >= 0 ? 'up' : 'down'}">${pct(r.score.pnlPct)}</b>
-              <span>评分 ${r.score.total}</span>
+              <span>评分 ${r.score.total}${r.feeTotal ? ` · 费 ${yuan2(r.feeTotal.total)}` : ''}</span>
             </div>
           </div>`,
         )
@@ -328,6 +397,7 @@ function renderRecords(): void {
         <div class="records">${rows}</div>
       </section>
       ${syncPanel()}
+      ${feePanel()}
       <section class="panel">
         <h3>本地文件备份</h3>
         <p class="tip">记录只存在这台设备的浏览器里。iOS 主屏应用长期不用时数据可能被系统清理，请定期导出，或开启上面的远程同步。</p>
@@ -367,7 +437,8 @@ function render(): void {
 function startGame(): void {
   if (!currentPackage || !currentMeta) return
   stopAutoPlay()
-  engine = ReplayEngine.create(pickSegment(currentPackage), configForPeriod(currentMeta))
+  const cfg = configForPeriod(currentMeta, loadFeeSchedule())
+  engine = ReplayEngine.create(pickSegment(currentPackage), cfg)
   result = null
 }
 
@@ -421,6 +492,7 @@ function updateTrainUI(newBar?: Candle): void {
   set('s-shares', `${engine.shareCount} 股`)
   set('s-profit', pct(engine.profitPct), engine.profit >= 0 ? 'up' : 'down')
   set('s-progress', `${engine.index + 1} / ${engine.total}`)
+  set('s-fees', yuan2(engine.totalFees.total))
   const list = document.getElementById('trade-list')
   if (list) list.innerHTML = renderTrades(engine.tradeList)
 }
@@ -440,6 +512,40 @@ function readSyncForm(): SyncConfig {
     repo: val('#sync-repo') || cfg?.repo || '',
     path: val('#sync-path') || cfg?.path || DEFAULT_PATH,
     token: val('#sync-token') || cfg?.token || '',
+  }
+}
+
+function readFeeForm(): FeeSchedule {
+  const s = loadFeeSchedule()
+  const num = (id: string): number =>
+    Number(document.querySelector<HTMLInputElement>(id)?.value)
+  const rate = (id: string, fallback: number): number => {
+    const n = num(id)
+    return Number.isFinite(n) && n >= 0 && n <= 30 ? fromWan(n) : fallback
+  }
+  const rawMin = num('#fee-min')
+  const min =
+    Number.isFinite(rawMin) && rawMin >= 0 && rawMin <= 1000
+      ? rawMin
+      : s.stock.minCommission
+  return {
+    stock: {
+      ...s.stock,
+      commissionRate: rate('#fee-stock', s.stock.commissionRate),
+      minCommission: min,
+      stampDutyRate: rate('#fee-stamp', s.stock.stampDutyRate),
+      transferRate: rate('#fee-transfer', s.stock.transferRate),
+    },
+    closed_fund: {
+      ...s.closed_fund,
+      commissionRate: rate('#fee-closed', s.closed_fund.commissionRate),
+      minCommission: min,
+    },
+    exchange_fund: {
+      ...s.exchange_fund,
+      commissionRate: rate('#fee-fund', s.exchange_fund.commissionRate),
+      minCommission: min,
+    },
   }
 }
 
@@ -548,6 +654,21 @@ async function handle(action: string): Promise<void> {
       render()
       return
     }
+    case 'feeSave': {
+      try {
+        saveFeeSchedule(readFeeForm())
+        toast('费率已保存，下一局生效')
+      } catch {
+        toast('保存失败：本机存储不可用')
+      }
+      render()
+      return
+    }
+    case 'feeReset':
+      resetFeeSchedule()
+      toast('已恢复默认费率，下一局生效')
+      render()
+      return
     case 'export': {
       try {
         const how = await exportRecords()
@@ -623,9 +744,10 @@ app.addEventListener('click', (event) => {
   else if (target.dataset.action) void handle(target.dataset.action)
 })
 
-// 同步设置用 form 包着密码框（消除浏览器告警），但绝不允许回车提交刷新页面
+// 设置项用 form 包着输入框（消除浏览器告警），但绝不允许回车提交刷新页面
 document.addEventListener('submit', (event) => {
-  if ((event.target as HTMLElement).id === 'sync-form') event.preventDefault()
+  const id = (event.target as HTMLElement).id
+  if (id === 'sync-form' || id === 'fee-form') event.preventDefault()
 })
 
 document.addEventListener('change', (event) => {
