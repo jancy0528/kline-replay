@@ -5,7 +5,9 @@ const BASE_TS = Date.UTC(2020, 0, 1)
 const DAY_MS = 86_400_000
 
 export const MA_PERIODS = [5, 10, 20, 30] as const
-export const MA_COLORS = ['#f5c451', '#4aa8ff', '#c07cf0', '#54d6c0'] as const
+/** 白 / 黄 / 紫 对应截图里的 MA5/MA10/MA20，第四条 MA30 用青色。 */
+export const MA_COLORS = ['#e8edf7', '#f5c451', '#c07cf0', '#54d6c0'] as const
+export const VOL_MA_PERIODS = [5, 10] as const
 
 /** 库默认把大数字写成 5.14M / 513K，中文界面改用万、亿。 */
 export function formatBigNumberCN(value: string | number): string {
@@ -26,15 +28,18 @@ function maAt(candles: Candle[], period: number): number | null {
   return sum / period
 }
 
-/** 图表上方的图例：四条均线当前值 + 最新一根的成交量。 */
-export function indicatorLegend(candles: Candle[]): string {
+/**
+ * 贴在周期栏下方的图例行，对应截图「均线▾ · MA5:20.82 10:20.89 20:20.39 · 前复权」。
+ * 成交量副图的量均线数值由 KLineCharts 自己的 tooltip 展示，这里只给最新量。
+ */
+export function indicatorLegend(candles: Candle[], viewLabel = '日线'): string {
   const mas = MA_PERIODS.map((period, i) => {
     const value = maAt(candles, period)
-    return `<span class="ma-item"><i style="background:${MA_COLORS[i]}"></i>MA${period} ${value === null ? '—' : value.toFixed(2)}</span>`
+    return `<span class="ma-item" style="color:${MA_COLORS[i]}">MA${period} ${value === null ? '—' : value.toFixed(2)}</span>`
   }).join('')
   const last = candles[candles.length - 1]
   const volume = last ? `${formatBigNumberCN(last.volume)}股` : '—'
-  return `${mas}<span class="vol-item">成交量 ${volume}</span>`
+  return `<span class="legend-prefix">均线▾ · ${viewLabel}</span>${mas}<span class="vol-item">量 ${volume}</span><span class="legend-tag">前复权</span>`
 }
 
 // A 股习惯：红涨绿跌。KLineCharts 默认相反（绿涨红跌），必须整体翻转。
@@ -134,7 +139,11 @@ export class ChartView {
       { name: 'MA', paneId: 'candle_pane', calcParams: [...MA_PERIODS] },
       true,
     )
-    chart.createIndicator({ name: 'VOL', paneId: 'volume_pane', calcParams: [] }, false)
+    // 截图里的成交量副图带两条量均线（MA5/MA10），此前关掉了，这里补回。
+    chart.createIndicator(
+      { name: 'VOL', paneId: 'volume_pane', calcParams: [...VOL_MA_PERIODS] },
+      false,
+    )
     chart.setPaneOptions({ id: 'volume_pane', height: 92 })
     this.chart = chart
   }

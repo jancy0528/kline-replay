@@ -1,4 +1,11 @@
-import type { Bar, Game, PeriodKey, SymbolData, WindowMeta } from '../data/segments'
+import type {
+  Bar,
+  Fundamentals,
+  Game,
+  PeriodKey,
+  SymbolData,
+  WindowMeta,
+} from '../data/segments'
 import {
   DEFAULT_FEE_SCHEDULE,
   ZERO_FEES,
@@ -18,10 +25,45 @@ import {
 
 export interface Candle {
   timestamp: number
+  /** 日线 'YYYY-MM-DD' / 分钟 'YYYY-MM-DD HH:mm'；周月 K 为该周期最后一天 */
+  label: string
   open: number
   high: number
   low: number
   close: number
+  volume: number
+}
+
+/** 顶部报价区（用户只要市值/流通/额/换，高低开市盈量比振幅一律不显示）。 */
+export interface QuoteMetrics {
+  price: number
+  change: number
+  changePct: number
+  marketCapYi: number
+  floatCapYi: number
+  /** 当日已揭示累计成交额，单位元；界面按万/亿自适应显示 */
+  amount: number
+  turnoverPct: number
+}
+
+/** 自绘分时图用的当日序列；全部来自已揭示分钟 K，不含未来。 */
+export interface IntradayPoint {
+  time: string
+  price: number
+  avg: number
+  volume: number
+  up: boolean
+}
+
+export interface IntradayData {
+  date: string
+  prevClose: number
+  points: IntradayPoint[]
+  high: number
+  low: number
+  /** 上下对称的涨跌幅刻度（百分数） */
+  boundPct: number
+  amount: number
   volume: number
 }
 
@@ -140,12 +182,54 @@ const dayOf = (label: string): string => label.slice(0, 10)
 function candleFrom(bar: Bar, timestamp: number): Candle {
   return {
     timestamp,
+    label: bar[0],
     open: bar[1],
     high: bar[2],
     low: bar[3],
     close: bar[4],
     volume: bar[5],
   }
+}
+
+/** ISO 周键 / 自然月键，用于把日线聚合成周 K、月 K。 */
+function periodKey(label: string, unit: 'week' | 'month'): string {
+  if (unit === 'month') return label.slice(0, 7)
+  const [y, m, d] = label.slice(0, 10).split('-').map(Number)
+  const date = new Date(Date.UTC(y, m - 1, d))
+  const day = (date.getUTCDay() + 6) % 7 // 周一=0
+  date.setUTCDate(date.getUTCDate() - day)
+  return date.toISOString().slice(0, 10) // 以周一作为该周唯一键
+}
+
+/** 按周/月把日线聚合成 OHLC；只吃已经揭示的日 K，天然不泄露未来。 */
+function aggregateCandles(days: Candle[], unit: 'week' | 'month'): Candle[] {
+  const groups: { key: string; bars: Candle[] }[] = []
+  for (const bar of days) {
+    const key = periodKey(bar.label, unit)
+    const last = groups[groups.length - 1]
+    if (last && last.key === key) last.bars.push(bar)
+    else groups.push({ key, bars: [bar] })
+  }
+  return groups.map((g, i) => {
+    const first = g.bars[0]
+    let high = -Infinity
+    let low = Infinity
+    let volume = 0
+    for (const b of g.bars) {
+      high = Math.max(high, b.high)
+      low = Math.min(low, b.low)
+      volume += b.volume
+    }
+    return {
+      timestamp: i,
+      label: g.bars[g.bars.length - 1].label,
+      open: first.open,
+      high,
+      low,
+      close: g.bars[g.bars.length - 1].close,
+      volume,
+    }
+  })
 }
 
 /**
@@ -159,6 +243,7 @@ function candleFrom(bar: Bar, timestamp: number): Candle {
 export class ReplayEngine {
   private readonly minBars: Bar[]
   private readonly dayBars: Bar[]
+  private readonly fund: Fundamentals | null
   private readonly start: number
   private readonly end: number
   private now: number
@@ -192,6 +277,7 @@ export class ReplayEngine {
     this.code = code
     this.minBars = symbol.m5
     this.dayBars = symbol.day
+    this.fund = symbol.fundamentals ?? null
     this.start = game.s
     this.end = game.e
     this.now = game.s
@@ -207,7 +293,8 @@ export class ReplayEngine {
 
   static create(symbol: SymbolData, game: Game, config: EngineConfig = DEFAULT_CONFIG): ReplayEngine {
     if (symbol.m5.length < 100) throw new Error('分钟线不足，无法成局')
-    if (game.s < 1 || game.e <= game.s || game.e >= symbol.m5.length) {
+    // s 允许为 0：训练局起点必须能落在当天第一根 5 分钟 K 上
+    if (game.s < 0 || game.e <= game.s || game.e >= symbol.m5.length) {
       throw new Error('对局游标越界')
     }
     const kind = classifyInstrument(game.c)
@@ -258,12 +345,22 @@ export class ReplayEngine {
     return this.minBars[0][1]
   }
 
+  /**
+   * 游标所在交易日的第一根分钟 K，且不低于开局游标。
+   * 下界必须是 start：否则一开局就会把「训练开始前那半天」也算进当日
+   * 成交额/换手/分时线，看起来像已经走完了一天。
+   */
+  private dayFirstIndex(cursor: number): number {
+    const day = dayOf(this.minBars[cursor][0])
+    let first = cursor
+    while (first > this.start && dayOf(this.minBars[first - 1][0]) === day) first -= 1
+    return first
+  }
+
   /** 日线视图的当日 K：只聚合当天已揭示的分钟 K，不含未来。 */
   private todayCandle(cursor: number): Candle | null {
     const day = dayOf(this.minBars[cursor][0])
-    // 从当天第一根开始，不必每次从头扫整个分钟序列
-    let first = cursor
-    while (first > 0 && dayOf(this.minBars[first - 1][0]) === day) first -= 1
+    const first = this.dayFirstIndex(cursor)
     let high = -Infinity
     let low = Infinity
     let volume = 0
@@ -274,7 +371,8 @@ export class ReplayEngine {
       volume += bar[5]
     }
     return {
-      timestamp: 0, // 由 candlesUntil 按输出位置重编号为连续序号
+      timestamp: 0, // 由 dayCandlesUntil 按输出位置重编号为连续序号
+      label: day,
       open: this.minBars[first][1],
       high,
       low,
@@ -283,14 +381,8 @@ export class ReplayEngine {
     }
   }
 
-  /** all=true 用于复盘，给完整走势；训练时只给已揭示部分。 */
-  private candlesUntil(cursor: number, all: boolean): Candle[] {
-    if (this.view === 'm5') {
-      // 全量累积而非滑动窗口：推进时只需往图表追加一根，用户画的线不会丢。
-      // 视口由图表自动停在右端，需要看更早的行情用缩放/平移。
-      const to = all ? this.end : cursor
-      return this.minBars.slice(0, to + 1).map((bar, i) => candleFrom(bar, i))
-    }
+  /** 截至游标的「安全日线序列」：历史完整日 K + 当日由分钟线合成的不完整 K。 */
+  private dayCandlesUntil(cursor: number): Candle[] {
     const day = dayOf(this.minBars[cursor][0])
     const out: Candle[] = []
     // dayBars 按日期递增；当前日及之后的完整日 K 一律不进入训练视图。
@@ -304,6 +396,20 @@ export class ReplayEngine {
       out.push(today)
     }
     return out
+  }
+
+  /** all=true 用于复盘，给完整走势；训练时只给已揭示部分。 */
+  private candlesUntil(cursor: number, all: boolean): Candle[] {
+    if (this.view === 'm5') {
+      // 全量累积而非滑动窗口：推进时只需往图表追加一根，用户画的线不会丢。
+      const to = all ? this.end : cursor
+      return this.minBars.slice(0, to + 1).map((bar, i) => candleFrom(bar, i))
+    }
+    const days = this.dayCandlesUntil(cursor)
+    // 周/月 K 由同一份安全日线序列聚合，不额外存数据包、也绝不包含未来。
+    if (this.view === 'week') return aggregateCandles(days, 'week')
+    if (this.view === 'month') return aggregateCandles(days, 'month')
+    return days
   }
 
   private viewStamp(): string {
@@ -381,6 +487,72 @@ export class ReplayEngine {
       positionPct: span > 0 ? round2(clamp(((current - low) / span) * 100, 0, 100)) : 50,
       series,
     }
+  }
+
+  /**
+   * 顶部报价区的四项指标。当前训练日落在分时数据覆盖的近 21 个交易日里，
+   * 末日前复权价＝真实价，用静态股本快照换算市值/换手不会明显失真。
+   * 「额」用当日已揭示分钟 K 的 Σ(收盘×量) 估算，与真实成交额口径一致。
+   */
+  quoteMetrics(): QuoteMetrics {
+    const price = this.currentPrice
+    const prev = this.previousClose
+    let amount = 0
+    let volume = 0
+    for (let i = this.dayFirstIndex(this.now); i <= this.now; i += 1) {
+      const bar = this.minBars[i]
+      amount += bar[4] * bar[5]
+      volume += bar[5]
+    }
+    const fund = this.fund
+    return {
+      price: round3(price),
+      change: round2(price - prev),
+      changePct: prev ? round2((price / prev - 1) * 100) : 0,
+      marketCapYi: fund ? round2((price * fund.totalShares) / 1e8) : 0,
+      floatCapYi: fund ? round2((price * fund.floatShares) / 1e8) : 0,
+      amount: round2(amount),
+      turnoverPct: fund && fund.floatShares > 0
+        ? round2((volume / fund.floatShares) * 100)
+        : 0,
+    }
+  }
+
+  /** 当日已揭示的分时序列：白线价格、黄线均价、红绿量柱、对称涨跌幅刻度。 */
+  intraday(): IntradayData | null {
+    const day = this.currentDay
+    const prevClose = this.previousClose
+    if (!prevClose) return null
+    const points: IntradayPoint[] = []
+    let amount = 0
+    let volume = 0
+    let high = prevClose
+    let low = prevClose
+    let prevPrice = prevClose
+    for (let i = this.dayFirstIndex(this.now); i <= this.now; i += 1) {
+      const bar = this.minBars[i]
+      const price = bar[4]
+      const v = bar[5]
+      amount += price * v
+      volume += v
+      high = Math.max(high, bar[2])
+      low = Math.min(low, bar[3])
+      points.push({
+        time: bar[0].slice(11, 16),
+        price,
+        avg: volume > 0 ? amount / volume : price,
+        volume: v,
+        up: price >= prevPrice,
+      })
+      prevPrice = price
+    }
+    if (!points.length) return null
+    const boundPct = Math.max(
+      1,
+      Math.abs((high / prevClose - 1) * 100),
+      Math.abs((low / prevClose - 1) * 100),
+    )
+    return { date: day, prevClose, points, high, low, boundPct: round2(boundPct), amount, volume }
   }
 
   // ---- 账户 ----------------------------------------------------------
@@ -497,11 +669,35 @@ export class ReplayEngine {
     return this.end
   }
 
+  /**
+   * 周/月视图一次推进一根完整周 K / 月 K：先补完当前周期，跨到下一周期末。
+   * 与日线视图同思路，条件单仍在 for 循环里按 5 分钟 K 逐根判定。
+   */
+  private nextPeriodCursor(unit: 'week' | 'month'): number {
+    const current = periodKey(this.currentLabel, unit)
+    let periodEnd = this.now
+    for (let i = this.now; i <= this.end; i += 1) {
+      if (periodKey(this.minBars[i][0], unit) !== current) break
+      periodEnd = i
+    }
+    if (periodEnd > this.now) return periodEnd
+    for (let i = this.now + 1; i <= this.end; i += 1) {
+      const next = periodKey(this.minBars[i][0], unit)
+      if (next === current) continue
+      let last = i
+      while (last + 1 <= this.end && periodKey(this.minBars[last + 1][0], unit) === next) last += 1
+      return last
+    }
+    return this.end
+  }
+
   advance(): boolean {
     if (this.ended) return false
     const target = this.view === 'm5'
       ? Math.min(this.now + 1, this.end)
-      : this.nextDayCursor()
+      : this.view === 'day'
+        ? this.nextDayCursor()
+        : this.nextPeriodCursor(this.view)
 
     for (let i = this.now + 1; i <= target; i += 1) {
       const bar = this.minBars[i]

@@ -1,27 +1,47 @@
 {
-  "version": 4,
-  "generatedAt": "2026-11-12T10:10:56+00:00",
-  "source": "baostock 前复权日线（2015 起完整历史） + 新浪 5 分钟线",
+  "version": 5,
+  "generatedAt": "2026-11-12T17:48:33+00:00",
+  "source": "baostock 前复权日线（2015 起完整历史） + 新浪 5 分钟线 + 腾讯股本快照",
   "adjust": "前复权，逐日按收盘价对齐",
-  "dataFile": "sessions-69bf67cf47.json",
-  "bytes": 2928069,
-  "symbols": 15,
-  "games": 240,
-  "historyBars": 41994,
+  "dataFile": "sessions-2ac3d55e6b.json",
+  "bytes": 3150424,
+  "symbols": 18,
+  "games": 288,
+  "historyBars": 46693,
+  "selection": {
+    "symbols": 94,
+    "signals": 157,
+    "scanned": 1049,
+    "gamesWithSignal": 288
+  },
   "windows": [
     {
       "key": "m5",
       "label": "分时",
       "visible": 60,
-      "advance": 480,
-      "note": "5 分钟 K 线，公开数据源最细只到 5 分钟"
+      "advance": 720,
+      "note": "当日价格线 + 均价线，5 分钟粒度，公开源最细"
     },
     {
       "key": "day",
-      "label": "日线",
+      "label": "日K",
       "visible": 60,
-      "advance": 480,
-      "note": "带 2015 年起完整历史；当日 K 由已揭示分钟线合成，不泄露未来"
+      "advance": 720,
+      "note": "带 2015 年起完整历史；当日 K 由已揭示分钟线合成"
+    },
+    {
+      "key": "week",
+      "label": "周K",
+      "visible": 40,
+      "advance": 720,
+      "note": "由日线按自然周聚合，当前周由已揭示数据合成"
+    },
+    {
+      "key": "month",
+      "label": "月K",
+      "visible": 24,
+      "advance": 720,
+      "note": "由日线按自然月聚合，当前月由已揭示数据合成"
     }
   ],
   "periods": [
@@ -29,15 +49,29 @@
       "key": "m5",
       "label": "分时",
       "visible": 60,
-      "advance": 480,
-      "note": "5 分钟 K 线，公开数据源最细只到 5 分钟"
+      "advance": 720,
+      "note": "当日价格线 + 均价线，5 分钟粒度，公开源最细"
     },
     {
       "key": "day",
-      "label": "日线",
+      "label": "日K",
       "visible": 60,
-      "advance": 480,
-      "note": "带 2015 年起完整历史；当日 K 由已揭示分钟线合成，不泄露未来"
+      "advance": 720,
+      "note": "带 2015 年起完整历史；当日 K 由已揭示分钟线合成"
+    },
+    {
+      "key": "week",
+      "label": "周K",
+      "visible": 40,
+      "advance": 720,
+      "note": "由日线按自然周聚合，当前周由已揭示数据合成"
+    },
+    {
+      "key": "month",
+      "label": "月K",
+      "visible": 24,
+      "advance": 720,
+      "note": "由日线按自然月聚合，当前月由已揭示数据合成"
     }
   ]
 }

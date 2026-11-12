@@ -307,48 +307,141 @@ h1 {
 .up { color: var(--up); }
 .down { color: var(--down); }
 
+/* 周期栏下方一行图例，对应截图「均线▾ 日线 MA5:.. 10:.. 20:.. 前复权」 */
 .indicator-legend {
   display: flex;
-  flex-wrap: wrap;
+  flex-wrap: nowrap;
   align-items: center;
-  gap: 6px 12px;
-  margin-top: 14px;
-  padding: 9px 11px;
-  border: 1px solid var(--line);
-  border-radius: 10px;
-  background: var(--panel);
+  gap: 4px 9px;
+  margin: 0;
+  padding: 7px 2px 6px;
+  overflow-x: auto;
+  scrollbar-width: none;
   color: var(--muted);
-  font-size: 11px;
+  font-size: 10.5px;
   font-variant-numeric: tabular-nums;
+  white-space: nowrap;
 }
 
-.indicator-legend .ma-item {
-  display: inline-flex;
-  align-items: center;
-  gap: 5px;
-}
+.indicator-legend::-webkit-scrollbar { display: none; }
 
-.indicator-legend .ma-item i {
-  width: 10px;
-  height: 2px;
-  border-radius: 1px;
-}
-
-.indicator-legend .vol-item {
-  margin-left: auto;
+.indicator-legend .ma-item { display: inline-flex; align-items: center; gap: 3px; flex: 0 0 auto; }
+.indicator-legend .ma-item.avg { color: #f5c451; }
+.indicator-legend .ma-item.up { color: var(--up); }
+.indicator-legend .ma-item.down { color: var(--down); }
+.indicator-legend .legend-prefix {
+  flex: 0 0 auto;
+  margin-right: 3px;
+  padding-right: 8px;
+  border-right: 1px solid var(--line);
   color: var(--text);
+  font-weight: 600;
+}
+.indicator-legend .vol-item { flex: 0 0 auto; color: var(--text); }
+.indicator-legend .legend-tag {
+  flex: 0 0 auto;
+  padding: 1px 5px;
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  color: var(--muted);
+  font-size: 10px;
+}
+
+.chart-area {
+  position: relative;
+  width: 100%;
 }
 
 .chart {
   position: relative;
+  z-index: 0;   /* 把 KLineCharts 内部浮层限制在这个层叠上下文里 */
   width: 100%;
   height: 400px;
-  margin-top: 8px;
   overflow: hidden;
   border: 1px solid var(--line);
-  border-radius: 12px;
+  border-radius: 10px;
   background: var(--panel);
 }
+
+/* 分时图自绘 SVG */
+.intraday {
+  width: 100%;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: #0b0f17;
+  overflow: hidden;
+}
+
+.intraday.empty {
+  height: 320px;
+  display: grid;
+  place-items: center;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.intraday svg {
+  display: block;
+  width: 100%;
+  height: 320px;
+}
+
+.id-axis {
+  fill: var(--muted);
+  font-size: 9px;
+  font-family: inherit;
+  font-variant-numeric: tabular-nums;
+}
+.id-axis.up { fill: var(--up); }
+.id-axis.down { fill: var(--down); }
+.id-axis.dim { fill: #67718a; }
+
+.intraday-legend {
+  display: flex;
+  align-items: center;
+  gap: 4px 12px;
+  padding: 5px 10px 8px;
+  border-top: 1px solid rgba(255, 255, 255, 0.06);
+  color: var(--muted);
+  font-size: 10.5px;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+.intraday-legend::-webkit-scrollbar { display: none; }
+.intraday-legend span { display: inline-flex; align-items: center; gap: 4px; }
+.intraday-legend i { width: 9px; height: 2px; border-radius: 1px; }
+.intraday-legend .up { color: var(--up); }
+.intraday-legend .down { color: var(--down); }
+.intraday-legend .dim { color: #67718a; margin-left: auto; }
+
+/* 截图里左下角的圆形缩放浮层 */
+.chart-overlay {
+  position: absolute;
+  left: 8px;
+  bottom: 108px;
+  display: flex;
+  gap: 3px;
+  z-index: 999;
+}
+
+.chart-overlay button {
+  width: 27px;
+  height: 27px;
+  padding: 0;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  border-radius: 50%;
+  background: rgba(58, 63, 76, 0.62);
+  color: #e8edf7;
+  font-size: 14px;
+  line-height: 1;
+  font-family: inherit;
+  cursor: pointer;
+  touch-action: manipulation;
+  backdrop-filter: blur(3px);
+}
+.chart-overlay button:active { background: rgba(110, 168, 254, 0.6); }
 
 .blind-note {
   margin: 8px 2px 0;
@@ -599,53 +692,104 @@ h1 {
 
 .toast.show { opacity: 1; transform: translate(-50%, 0); }
 
-/* 时间窗口：分时 / 日线——同一局内切换 */
+/* 顶部报价区：左侧大字现价，右侧两列四项（市值/流通/额/换） */
+.quote-panel {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  margin: 0 0 12px;
+  padding: 6px 2px 12px;
+  border-bottom: 1px solid var(--line);
+  font-variant-numeric: tabular-nums;
+}
+
+.quote-main { flex: 0 0 auto; min-width: 118px; }
+
+.quote-price {
+  display: block;
+  font-size: 36px;
+  font-weight: 600;
+  line-height: 1.05;
+  letter-spacing: -0.5px;
+}
+.quote-price.up { color: var(--up); }
+.quote-price.down { color: var(--down); }
+
+.quote-chg {
+  display: flex;
+  gap: 12px;
+  margin-top: 4px;
+  font-size: 14px;
+  font-weight: 600;
+}
+.quote-chg.up { color: var(--up); }
+.quote-chg.down { color: var(--down); }
+
+.quote-grid {
+  flex: 1 1 auto;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 5px 10px;
+  font-size: 12px;
+}
+
+.quote-grid div { display: flex; justify-content: space-between; gap: 6px; }
+.quote-grid span { color: var(--muted); }
+.quote-grid b { color: var(--text); font-weight: 600; white-space: nowrap; }
+
+/* 周期栏：紧贴图表上方，选中态为红色下划线 */
 .window-bar {
   display: flex;
   align-items: center;
-  gap: 10px;
-  margin: 0 0 6px;
+  gap: 8px;
+  margin: 0;
+  border-bottom: 1px solid var(--line);
 }
 
 .window-tabs {
   display: flex;
   flex: 1 1 auto;
-  gap: 6px;
-  padding: 3px;
-  border: 1px solid var(--line);
-  border-radius: 999px;
-  background: var(--panel);
+  gap: 2px;
 }
 
 .window-tabs button {
+  position: relative;
   flex: 1 1 0;
-  min-height: 32px;
+  min-height: 40px;
+  padding: 0 2px;
   border: 0;
-  border-radius: 999px;
   background: transparent;
   color: var(--muted);
-  font-size: 13px;
+  font-size: 15px;
   font-family: inherit;
   cursor: pointer;
   touch-action: manipulation;
 }
 
-.window-tabs button.on {
-  background: rgba(110, 168, 254, 0.18);
-  color: var(--text);
-  font-weight: 600;
+.window-tabs button.on { color: var(--text); font-weight: 600; }
+
+.window-tabs button.on::after {
+  content: '';
+  position: absolute;
+  left: 50%;
+  bottom: 4px;
+  width: 20px;
+  height: 3px;
+  border-radius: 2px;
+  background: var(--up);
+  transform: translateX(-50%);
 }
 
 .order-entry {
   position: relative;
   flex: 0 0 auto;
-  min-height: 38px;
-  padding: 6px 12px;
+  min-height: 28px;
+  padding: 4px 9px;
   border: 1px solid var(--line);
-  border-radius: 999px;
-  background: var(--panel);
-  color: var(--text);
-  font-size: 12px;
+  border-radius: 7px;
+  background: transparent;
+  color: var(--muted);
+  font-size: 11px;
   font-family: inherit;
   cursor: pointer;
   touch-action: manipulation;
@@ -653,47 +797,18 @@ h1 {
 
 .order-entry b {
   display: inline-block;
-  min-width: 17px;
-  margin-left: 4px;
-  padding: 1px 4px;
-  border-radius: 9px;
+  min-width: 15px;
+  margin-left: 3px;
+  padding: 0 4px;
+  border-radius: 8px;
   background: var(--accent);
   color: #0d1320;
-  font-size: 11px;
+  font-size: 10px;
 }
 
-.window-hint {
-  margin: 0 0 12px;
-  color: var(--muted);
-  font-size: 11px;
-  line-height: 1.5;
-}
-
-/* 盘口条 */
-.quote {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 4px 10px;
-  margin-top: 12px;
-  padding: 9px 11px;
-  border: 1px solid var(--line);
-  border-radius: 10px;
-  background: var(--panel);
-  color: var(--muted);
-  font-size: 11px;
-  font-variant-numeric: tabular-nums;
-}
-
-.quote b { color: var(--text); font-weight: 600; }
-.quote .up, .quote b.up { color: var(--up); }
-.quote .down, .quote b.down { color: var(--down); }
-.quote-chg { margin-left: auto; font-weight: 600; font-size: 12px; }
-
-/* 历史位置标尺：已揭示历史的缩略走势 + 当前价分位 */
+/* 历史位置：收成一行可展开迷你条，不占周期栏与图表之间 */
 .history-bar {
   margin-top: 8px;
-  padding: 9px 11px 10px;
   border: 1px solid var(--line);
   border-radius: 10px;
   background: var(--panel);
@@ -701,18 +816,23 @@ h1 {
   font-variant-numeric: tabular-nums;
 }
 
-.history-head {
+.history-bar > summary {
   display: flex;
   align-items: baseline;
   gap: 8px;
+  padding: 8px 11px;
+  cursor: pointer;
+  list-style: none;
   color: var(--muted);
 }
+.history-bar > summary::-webkit-details-marker { display: none; }
+.history-bar > summary > span:first-child { color: var(--text); font-weight: 600; }
+.history-bar > summary b { color: var(--text); font-weight: 600; }
+.history-bar > summary b.up { color: var(--up); }
+.history-bar > summary b.down { color: var(--down); }
+.history-bar .history-span { margin-left: auto; font-size: 10px; white-space: nowrap; }
 
-.history-head > span:first-child { color: var(--text); font-weight: 600; }
-.history-head b { color: var(--text); font-weight: 600; }
-.history-head b.up { color: var(--up); }
-.history-head b.down { color: var(--down); }
-.history-span { margin-left: auto; font-size: 10px; white-space: nowrap; }
+.history-body { padding: 0 11px 10px; border-top: 1px solid var(--line); }
 
 .history-spark {
   display: block;
@@ -787,6 +907,17 @@ h1 {
 }
 
 .chart-tools button:active { background: var(--bg); color: var(--text); }
+
+.chart-tools span {
+  align-self: center;
+  margin-left: auto;
+  color: #67718a;
+  font-size: 10px;
+  white-space: nowrap;
+}
+
+.blind-note + .stats,
+.history-bar + .blind-note + .stats { margin-top: 10px; }
 
 /* 同步设置 */
 .sync-state {

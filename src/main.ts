@@ -13,6 +13,7 @@ import {
   configForWindow,
   type Candle,
   type HistoryPosition,
+  type QuoteMetrics,
   type SessionResult,
   type Trade,
 } from './engine/replay'
@@ -57,8 +58,9 @@ import {
   type OrderStatus,
   type OrderTrigger,
 } from './engine/orders'
-import { ChartView, formatBigNumberCN, indicatorLegend } from './ui/chart'
+import { ChartView, indicatorLegend } from './ui/chart'
 import { renderCurve } from './ui/curve'
+import { renderIntraday } from './ui/intraday'
 
 const root = document.querySelector<HTMLDivElement>('#app')
 if (!root) throw new Error('#app not found')
@@ -154,35 +156,56 @@ function header(active: View): string {
   </header>`
 }
 
-/** 时间窗口栏：只有「分时」「日线」，切换的是同一局同一只股票的 K 线粒度。 */
+/** 周期栏：分时 / 日K / 周K / 月K，紧贴图表上方，选中态为红色下划线。 */
 function windowBar(e: ReplayEngine): string {
   const items = sessions?.windows ?? []
   const buttons = items
     .map((w) => `<button data-window="${w.key}" class="${w.key === e.currentView ? 'on' : ''}">${w.label}</button>`)
     .join('')
   const watching = e.orderList.filter((o) => o.status === 'watching').length
-  const hint = e.currentView === 'day'
-    ? '日线 · 同一局同一只股票 · 含 2015 年起完整历史，缩小左拉或点「最早」回看'
-    : '分时 · 同一局同一只股票，切换窗口不重开'
   return `<div class="window-bar">
       <div class="window-tabs">${buttons}</div>
-      <button class="order-entry" data-action="orders">条件单${watching ? `<b>${watching}</b>` : ''}</button>
-    </div>
-    <p class="window-hint">${hint}</p>`
+      <button class="order-entry" data-action="orders" aria-label="条件单">条件单${watching ? `<b>${watching}</b>` : ''}</button>
+    </div>`
 }
 
-function quoteBar(candles: Candle[], prevClose: number, dayChg: number): string {
-  const c = candles[candles.length - 1]
-  if (!c) return ''
-  const cls = (v: number): string => (v >= prevClose ? 'up' : 'down')
-  return `<div class="quote" id="quote">
-    <span>开 <b class="${cls(c.open)}">${c.open.toFixed(2)}</b></span>
-    <span>高 <b class="${cls(c.high)}">${c.high.toFixed(2)}</b></span>
-    <span>低 <b class="${cls(c.low)}">${c.low.toFixed(2)}</b></span>
-    <span>收 <b class="${cls(c.close)}">${c.close.toFixed(2)}</b></span>
-    <span class="quote-chg ${dayChg >= 0 ? 'up' : 'down'}">日涨跌 ${pct(dayChg)}</span>
-    <span>量 <b>${formatBigNumberCN(c.volume)}</b></span>
+/** 金额自适应：刚开盘只有几百万时显示「万」，放量后显示「亿」。 */
+function fmtAmountYuan(n: number): string {
+  if (n >= 1e8) return `${(n / 1e8).toFixed(2)}亿`
+  if (n >= 1e4) return `${(n / 1e4).toFixed(0)}万`
+  return `${Math.round(n)}`
+}
+
+/**
+ * 顶部报价区，对齐同花顺：左侧大字现价 + 涨跌额/幅，右侧两列。
+ * 按用户要求只保留 市值 / 流通 / 额 / 换，去掉 高低开、市盈、量比、振幅。
+ */
+function quotePanel(q: QuoteMetrics): string {
+  const cls = q.change >= 0 ? 'up' : 'down'
+  const sign = q.change >= 0 ? '+' : ''
+  return `<div class="quote-panel" id="quote">
+    <div class="quote-main">
+      <b class="quote-price ${cls}">${q.price.toFixed(2)}</b>
+      <div class="quote-chg ${cls}"><span>${sign}${q.change.toFixed(2)}</span><span>${sign}${q.changePct.toFixed(2)}%</span></div>
+    </div>
+    <div class="quote-grid">
+      <div><span>市值</span><b>${q.marketCapYi.toFixed(2)}亿</b></div>
+      <div><span>额</span><b>${fmtAmountYuan(q.amount)}</b></div>
+      <div><span>流通</span><b>${q.floatCapYi.toFixed(2)}亿</b></div>
+      <div><span>换</span><b>${q.turnoverPct.toFixed(2)}%</b></div>
+    </div>
   </div>`
+}
+
+/** 分时图上方那行：均价 / 最新 / 涨跌 / 涨跌幅（不含集合竞价）。 */
+function intradayLegend(q: QuoteMetrics, avg: number): string {
+  const cls = q.change >= 0 ? 'up' : 'down'
+  const sign = q.change >= 0 ? '+' : ''
+  return `<span class="legend-prefix">分时</span>
+    <span class="ma-item avg">均价 ${avg.toFixed(2)}</span>
+    <span class="ma-item">最新 ${q.price.toFixed(2)}</span>
+    <span class="ma-item ${cls}">${sign}${q.change.toFixed(2)}</span>
+    <span class="ma-item ${cls}">${sign}${q.changePct.toFixed(2)}%</span>`
 }
 
 /**
@@ -210,38 +233,51 @@ function historyBar(h: HistoryPosition | null): string {
     : isLow
       ? '创历史新低'
       : `高于历史 ${h.rankPct.toFixed(0)}% 的交易日`
-  return `<div class="history-bar">
-    <div class="history-head">
+  // 收成一行可展开的迷你条：周期栏与图表之间不能塞东西，
+  // 但上一轮用户明确要「知道当前价在历史什么位置」，用 details 兼顾两者。
+  return `<details class="history-bar">
+    <summary>
       <span>历史位置</span>
       <b class="${isHigh ? 'up' : isLow ? 'down' : ''}">${tag}</b>
-      <span class="history-span">${h.from.slice(0, 7)} 起 · ${h.bars} 根日线</span>
+      <span class="history-span">${h.from.slice(0, 7)} 起 · ${h.bars} 根日线 ▾</span>
+    </summary>
+    <div class="history-body">
+      <svg class="history-spark" viewBox="0 0 ${W} ${H}" preserveAspectRatio="none" aria-hidden="true">
+        <polygon class="spark-area" points="0,${bottom} ${pts} ${W},${bottom}" />
+        <polyline class="spark-line" points="${pts}" />
+        <line class="spark-now" x1="0" y1="${dotY}" x2="${W}" y2="${dotY}" />
+        <circle class="spark-dot" cx="${W - 1.5}" cy="${dotY}" r="2.6" />
+      </svg>
+      <div class="history-scale">
+        <span>低 ${h.low.toFixed(2)}</span>
+        <span>距高 ${pct(h.fromHighPct)} · 距低 ${pct(h.fromLowPct)}</span>
+        <span>高 ${h.high.toFixed(2)}</span>
+      </div>
+      <div class="history-track"><i style="left:${h.positionPct}%"></i></div>
     </div>
-    <svg class="history-spark" viewBox="0 0 ${W} ${H}" preserveAspectRatio="none" aria-hidden="true">
-      <polygon class="spark-area" points="0,${bottom} ${pts} ${W},${bottom}" />
-      <polyline class="spark-line" points="${pts}" />
-      <line class="spark-now" x1="0" y1="${dotY}" x2="${W}" y2="${dotY}" />
-      <circle class="spark-dot" cx="${W - 1.5}" cy="${dotY}" r="2.6" />
-    </svg>
-    <div class="history-scale">
-      <span>低 ${h.low.toFixed(2)}</span>
-      <span>距高 ${pct(h.fromHighPct)} · 距低 ${pct(h.fromLowPct)}</span>
-      <span>高 ${h.high.toFixed(2)}</span>
-    </div>
-    <div class="history-track"><i style="left:${h.positionPct}%"></i></div>
+  </details>`
+}
+
+/** 截图里左下角的半透明圆形缩放浮层，绝对定位压在图表上。 */
+function chartOverlayTools(intraday: boolean): string {
+  if (intraday) return ''
+  return `<div class="chart-overlay">
+    <button data-action="earliest" aria-label="最早">«</button>
+    <button data-action="zoomIn" aria-label="放大">＋</button>
+    <button data-action="zoomOut" aria-label="缩小">－</button>
+    <button data-action="panLeft" aria-label="看更早">‹</button>
+    <button data-action="panRight" aria-label="看更新">›</button>
+    <button data-action="latest" aria-label="回到最新">⤢</button>
   </div>`
 }
 
-function chartTools(): string {
+function chartTools(intraday: boolean): string {
+  if (intraday) return ''
   return `<div class="chart-tools">
-    <button data-action="zoomIn">＋</button>
-    <button data-action="zoomOut">－</button>
-    <button data-action="panLeft">←</button>
-    <button data-action="panRight">→</button>
-    <button data-action="earliest">最早</button>
-    <button data-action="latest">最新</button>
     <button data-action="drawLine">趋势线</button>
     <button data-action="drawHLine">水平线</button>
-    <button data-action="clearDraw">清除</button>
+    <button data-action="clearDraw">清除画线</button>
+    <span>缩小左拉或点「«」可看 2015 年起完整历史</span>
   </div>`
 }
 
@@ -282,7 +318,9 @@ function renderTrades(trades: Trade[]): string {
     .join('')
 }
 
-function mountChart(candles: Candle[]): void {
+function mountChart(candles: Candle[], intraday: boolean): void {
+  // 分时窗走自绘 SVG，不初始化 KLineCharts（坐标系完全不同，复用反而会串数据）
+  if (intraday) return
   const el = document.querySelector<HTMLElement>('#chart')
   if (!el) return
   chartView = new ChartView(el)
@@ -294,22 +332,32 @@ function renderTrain(): void {
   if (!engine) startGame()
   const e = engine
   if (!e) return
+  const intraday = e.currentView === 'm5'
   const candles = e.visible()
+  const q = e.quoteMetrics()
+  const id = intraday ? e.intraday() : null
+  const avg = id?.points[id.points.length - 1]?.avg ?? q.price
+  const legend = intraday ? intradayLegend(q, avg) : indicatorLegend(candles, e.viewLabel)
   app.innerHTML = `${header('train')}
     <main class="page">
+      <div id="quote-wrap">${quotePanel(q)}</div>
       ${windowBar(e)}
+      <div class="indicator-legend" id="indicator-legend">${legend}</div>
+      <div class="chart-area">
+        ${intraday
+          ? `<div id="intraday-wrap">${renderIntraday(id)}</div>`
+          : '<div id="chart" class="chart"></div>'}
+        ${chartOverlayTools(intraday)}
+      </div>
+      ${chartTools(intraday)}
+      <div id="history-wrap">${historyBar(e.historyPosition())}</div>
+      <p class="blind-note">股票名称与日期已隐藏 · 只能看到已推进的 K 线 · 四个窗口是同一局同一只股票</p>
       <section class="stats">
         <div><span>可用资金</span><b id="s-cash">${money(e.cashValue)}</b></div>
         <div><span>持仓</span><b id="s-shares">${e.shareCount} 股</b></div>
         <div><span>浮动盈亏</span><b id="s-profit" class="${e.profit >= 0 ? 'up' : 'down'}">${pct(e.profitPct)}</b></div>
         <div><span>本局进度</span><b id="s-progress">${e.index + 1} / ${e.total}</b></div>
       </section>
-      <div id="quote-wrap">${quoteBar(candles, e.previousClose, e.dayChangePct)}</div>
-      <div class="indicator-legend" id="indicator-legend">${indicatorLegend(candles)}</div>
-      <div id="history-wrap">${historyBar(e.historyPosition())}</div>
-      <div id="chart" class="chart"></div>
-      ${chartTools()}
-      <p class="blind-note">股票名称与日期已隐藏 · 只能看到已推进的 K 线</p>
       <p class="fee-note" id="fee-note">${feeNote(e)}</p>
       <section class="controls">
         <div class="btn-row">
@@ -332,7 +380,7 @@ function renderTrain(): void {
         <div id="trade-list">${renderTrades(e.tradeList)}</div>
       </section>
     </main>`
-  mountChart(candles)
+  mountChart(candles, intraday)
 }
 
 function renderReview(): void {
@@ -372,9 +420,9 @@ function renderReview(): void {
         <div><span>最大回撤</span><b>${r.score.maxDrawdown.toFixed(2)}%</b></div>
         <div><span>交易 / 胜率</span><b>${r.score.tradeCount} / ${r.score.winRate}%</b></div>
       </section>
-      <div class="indicator-legend" id="indicator-legend">${indicatorLegend(r.candles)}</div>
-      <div id="chart" class="chart"></div>
-      ${chartTools()}
+      <div class="indicator-legend" id="indicator-legend">${indicatorLegend(r.candles, r.periodLabel)}</div>
+      <div class="chart-area"><div id="chart" class="chart"></div>${chartOverlayTools(false)}</div>
+      ${chartTools(false)}
       <p class="blind-note">上图为完整走势；买卖点标记在下方资金曲线上</p>
       <section class="panel">
         <h3>本局手续费</h3>
@@ -401,7 +449,7 @@ function renderReview(): void {
         <button class="btn ghost" data-action="records">查看记录</button>
       </section>
     </main>`
-  mountChart(r.candles)
+  mountChart(r.candles, false)
 }
 
 // ---- 条件单 ---------------------------------------------------------
@@ -810,22 +858,42 @@ function notifyOrders(before: ConditionalOrder[], after: ConditionalOrder[]): vo
 
 function updateTrainUI(): void {
   if (!engine || view !== 'train') return
-  const candles = engine.visible()
-  const last = candles[candles.length - 1]
-  const count = chartView?.barCount ?? 0
-  // 完整日线有 2800 根，推进时不再整体 resetData：
-  // 根数不变 = 当日 K 被重新合成（原地替换），+1 = 新增一根，其余才全量重设。
-  if (last && chartView && (candles.length === count || candles.length === count + 1)) {
-    chartView.pushLatest(last)
-  } else {
-    chartView?.setBars(candles, true)
-  }
-  const legend = document.getElementById('indicator-legend')
-  if (legend) legend.innerHTML = indicatorLegend(candles)
+  const e = engine
+  const intraday = e.currentView === 'm5'
+  const candles = e.visible()
+  const q = e.quoteMetrics()
   const quote = document.getElementById('quote-wrap')
-  if (quote) quote.innerHTML = quoteBar(candles, engine.previousClose, engine.dayChangePct)
-  const history = document.getElementById('history-wrap')
-  if (history) history.innerHTML = historyBar(engine.historyPosition())
+  if (quote) quote.innerHTML = quotePanel(q)
+
+  if (intraday) {
+    const id = e.intraday()
+    const box = document.getElementById('intraday-wrap')
+    if (box) box.innerHTML = renderIntraday(id)
+    const legend = document.getElementById('indicator-legend')
+    if (legend) legend.innerHTML = intradayLegend(q, id?.points[id.points.length - 1]?.avg ?? q.price)
+  } else {
+    const last = candles[candles.length - 1]
+    const count = chartView?.barCount ?? 0
+    // 完整日线有 2800 根，推进时不再整体 resetData：
+    // 根数不变 = 当日 K 被重新合成（原地替换），+1 = 新增一根，其余才全量重设。
+    if (last && chartView && (candles.length === count || candles.length === count + 1)) {
+      chartView.pushLatest(last)
+    } else {
+      chartView?.setBars(candles, true)
+    }
+    const legend = document.getElementById('indicator-legend')
+    if (legend) legend.innerHTML = indicatorLegend(candles, e.viewLabel)
+  }
+
+  const historyWrap = document.getElementById('history-wrap')
+  if (historyWrap) {
+    const wasOpen = historyWrap.querySelector('details')?.open ?? false
+    historyWrap.innerHTML = historyBar(e.historyPosition())
+    if (wasOpen) {
+      const details = historyWrap.querySelector('details')
+      if (details) details.open = true
+    }
+  }
   const set = (id: string, text: string, cls?: string): void => {
     const el = document.getElementById(id)
     if (!el) return

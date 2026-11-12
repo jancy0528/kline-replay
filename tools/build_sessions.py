@@ -1,22 +1,26 @@
 #!/usr/bin/env python3
-"""生成「同一局、双时间窗口」对局包。
+"""生成「同一局、四个时间窗口」对局包。
 
-设计要点（对应 2026-11-12 的需求变更）：
-  1. 时间窗口只剩「分时」和「日线」，二者是**同一只股票、同一段时间**
-     的两种 K 线粒度，不是两局独立行情。切换窗口不换股、不重开局。
-  2. 一局的时间游标统一落在 5 分钟 K 线上；日线视图里「当日」那根 K
+设计要点（对应 2026-11-13 的需求变更）：
+  1. 时间窗口为「分时 / 日K / 周K / 月K」，是**同一只股票、同一段时间**
+     的四种 K 线粒度，不是四局独立行情。切换窗口不换股、不重开局。
+     周 K / 月 K 由完整日线在运行时聚合，数据包不额外增大。
+  2. 一局的时间游标统一落在 5 分钟 K 上；日线视图里「当日」那根 K
      由当天截至游标的分钟 K 实时合成，绝不把整日 OHLC 提前透露出去。
   3. 本地日线是 BaoStock 前复权，分钟线是新浪前复权，两者复权基准日
-     可能不同。按「同一交易日的收盘价」逐日做比例校准，保证两个窗口
+     可能不同。按「同一交易日的收盘价」逐日做比例校准，保证各窗口
      报价一致；这是口径对齐，不是合成行情。
-  4. 日线视图带**完整历史**（2015 年起，约 2800 根/只），让用户缩小左拉
-     能看到长期走势、判断当前价的历史位置。这些日线对当前游标而言都是
-     过去；引擎只输出 bar[0] < 当前日 的 K，当日 K 仍由已揭示的分钟线
-     合成，因此不会泄露未来。
+  4. **训练局由选股信号驱动**：`select_stocks.py` 按用户的三层规则
+     （基础池 / 量能 / 周线 MA5>MA10>MA20）挑出标的与信号日，每局的
+     起点压在信号日之前 2~5 个交易日，终点尽量延伸到分时数据末尾，
+     保证这一局的 K 线里确实包含满足筛选条件的那段形态。
+  5. 日线带完整历史（2015 年起），供缩小左拉判断当前价的历史位置。
 
 输入：
-  src/data/bars.ts              本地前复权日线（15 只，含到 2026-11）
-  src/data/raw/minutes.json     新浪 5 分钟线缓存（由 fetch_minutes.py 生成）
+  src/data/bars.ts              选股命中标的的 2015 起完整前复权日线
+  src/data/raw/minutes.json     新浪 5 分钟线缓存（fetch_pool.py 生成）
+  src/data/raw/selection.json   选股结果与信号日
+  src/data/raw/fundamentals.json 流通/总股本静态快照
 输出：
   public/data/manifest.json
   public/data/sessions-<hash>.json   { windows, symbols, games }
@@ -36,21 +40,26 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
 OUT_DIR = ROOT / "public" / "data"
+RAW = ROOT / "src" / "data" / "raw"
 DAILY_FILE = ROOT / "src" / "data" / "bars.ts"
-MINUTE_FILE = ROOT / "src" / "data" / "raw" / "minutes.json"
+MINUTE_FILE = RAW / "minutes.json"
+SELECTION_FILE = RAW / "selection.json"
+FUND_FILE = RAW / "fundamentals.json"
 
-# 手机上一屏能看清的 K 线根数；advance 是一局最多推进的 5 分钟 K 根数
-# （480 根 ≈ 10 个交易日；日线窗口下一次推进＝一个交易日）。
+# advance 是一局最多推进的 5 分钟 K 根数（720 根 ≈ 15 个交易日）。
 WINDOWS = [
-    {"key": "m5", "label": "分时", "visible": 60, "advance": 480,
-     "note": "5 分钟 K 线，公开数据源最细只到 5 分钟"},
-    {"key": "day", "label": "日线", "visible": 60, "advance": 480,
-     "note": "带 2015 年起完整历史；当日 K 由已揭示分钟线合成，不泄露未来"},
+    {"key": "m5", "label": "分时", "visible": 60, "advance": 720,
+     "note": "当日价格线 + 均价线，5 分钟粒度，公开源最细"},
+    {"key": "day", "label": "日K", "visible": 60, "advance": 720,
+     "note": "带 2015 年起完整历史；当日 K 由已揭示分钟线合成"},
+    {"key": "week", "label": "周K", "visible": 40, "advance": 720,
+     "note": "由日线按自然周聚合，当前周由已揭示数据合成"},
+    {"key": "month", "label": "月K", "visible": 24, "advance": 720,
+     "note": "由日线按自然月聚合，当前月由已揭示数据合成"},
 ]
-# 日线不再裁成「开局前 N 根」：完整历史全部放进包里，由引擎按当前日过滤。
-# 只保留一份、不随局数增长，15 只约 4.2 万根；这是真实历史，不是采样或合成。
-FULL_HISTORY = True
+ADVANCE = WINDOWS[0]["advance"]
 MIN_MINUTE_BARS = 300      # 低于该根数的标的不足以成局
+LEAD_DAYS = (1, 5)         # 开局压在信号日前 1~5 个交易日，且落在日首
 
 
 def load_daily() -> dict[str, list[list]]:
@@ -61,14 +70,10 @@ def load_daily() -> dict[str, list[list]]:
     return json.loads(text.split(marker, 1)[1].strip())
 
 
-def load_minutes() -> dict[str, list[list]]:
-    if not MINUTE_FILE.exists():
-        raise SystemExit(
-            f"缺少 {MINUTE_FILE}。先运行：python tools/fetch_minutes.py\n"
-            "（没有真实分钟线时不会伪造分时数据，日线窗口可照常生成）"
-        )
-    data = json.loads(MINUTE_FILE.read_text(encoding="utf-8"))
-    return data.get("m5") or {}
+def load_json(path: Path, default):
+    if not path.exists():
+        return default
+    return json.loads(path.read_text(encoding="utf-8"))
 
 
 def align_symbol(code: str, daily: list[list], minutes: list[list]) -> dict | None:
@@ -105,17 +110,13 @@ def align_symbol(code: str, daily: list[list], minutes: list[list]) -> dict | No
         return None
 
     first_day = min(groups)
-    # 日线窗口：从上市/数据起点一直到分钟数据最后一天的完整历史。
-    # 引擎在训练时只显示「日期 < 当前日」的 K，当日 K 由分钟线合成，
-    # 所以包里存在当前日之后的完整日 K 也不会被提前看到。
     day_index = {b[0]: i for i, b in enumerate(daily)}
     anchor = day_index.get(first_day)
     if anchor is None:
         return None
-    start = 0 if FULL_HISTORY else max(0, anchor - 60)
     last_day = max(groups)
     end = day_index.get(last_day, anchor)
-    day_bars = daily[start:end + 1]
+    day_bars = daily[:end + 1]      # 完整历史，从数据起点 2015 年
     if len(day_bars) < 30:
         return None
     if max_drift > 0.05:
@@ -123,34 +124,66 @@ def align_symbol(code: str, daily: list[list], minutes: list[list]) -> dict | No
     return {"day": day_bars, "m5": aligned, "drift": max_drift}
 
 
-def make_games(symbols: dict, per_symbol: int, rng: random.Random) -> list[dict]:
+def make_games(symbols: dict, signals: dict[str, list[str]],
+               per_symbol: int, rng: random.Random) -> list[dict]:
+    """每局锚定一个真实信号日：起点在信号日前，终点尽量到分时数据末尾。"""
     games: list[dict] = []
     for code, data in symbols.items():
-        n = len(data["m5"])
-        # 起点压在前 60~200 根：分时视图是累积显示，初始不至于密到看不清
-        lo = WINDOWS[0]["visible"]
-        hi = min(n - WINDOWS[0]["advance"] - 1, 200)
-        if hi <= lo:
-            hi = min(n - 2, lo + 120)
+        m5 = data["m5"]
+        n = len(m5)
+        dates = [str(b[0])[:10] for b in m5]
+        days = sorted(set(dates))
+        day_first: dict[str, int] = {}
+        for i, d in enumerate(dates):
+            day_first.setdefault(d, i)
+        # 信号日若落在分时窗口第一天（只有半天数据、无法做开局锚点），
+        # 不能拿来生成局，否则信号会落在起点之前而没被 K 线覆盖。
+        valid = [d for d in signals.get(code, [])
+                 if d in day_first and days.index(d) >= 1]
+        if not valid:
+            # 没有可用信号日的标的仍可成局，但不宣称含信号；起点同样落日首
+            for _ in range(per_symbol):
+                day = rng.choice(days[1:-1]) if len(days) > 2 else days[-1]
+                s = day_first[day]
+                e = min(n - 1, s + ADVANCE)
+                if e > s:
+                    games.append({"c": code, "s": s, "e": e})
+            continue
         for _ in range(per_symbol):
-            s = rng.randint(lo, max(lo, hi))
-            e = min(n - 1, s + WINDOWS[0]["advance"])
-            games.append({"c": code, "s": s, "e": e})
+            signal = rng.choice(valid)
+            sig_day_idx = days.index(signal)
+            # 起点必须落在某个交易日的第一根 5 分钟 K 上，否则「当日分时/
+            # 成交额」会把开局前那半天也算进去。另外新浪 1023 根窗口的
+            # 第一天只有下午半天（13:50 起），不能拿来开局，故下界取 1。
+            lead_days = rng.randint(*LEAD_DAYS)
+            start_day = days[max(1, sig_day_idx - lead_days)]
+            s = day_first[start_day]   # 可以是 0：那才是当天第一根
+            e = min(n - 1, s + ADVANCE)
+            if e <= s or s >= n - 2:
+                continue
+            games.append({"c": code, "s": s, "e": e, "signal": signal})
     rng.shuffle(games)
     return games
 
 
 def main() -> int:
-    ap = argparse.ArgumentParser(description="生成对局包（分时 / 日线双窗口）")
+    ap = argparse.ArgumentParser(description="生成四窗口对局包（信号日驱动）")
     ap.add_argument("--per-symbol", type=int, default=16, help="每只标的生成多少局")
-    ap.add_argument("--seed", type=int, default=20261112, help="随机种子，保证可复现")
+    ap.add_argument("--seed", type=int, default=20261113, help="随机种子，保证可复现")
     args = ap.parse_args()
 
     OUT_DIR.mkdir(parents=True, exist_ok=True)
     daily = load_daily()
-    minutes = load_minutes()
+    minutes = load_json(MINUTE_FILE, {}).get("m5") or {}
+    selection = load_json(SELECTION_FILE, {})
+    fund = load_json(FUND_FILE, {})
+    signals: dict[str, list[str]] = {
+        p["code"]: [s["date"] for s in p["signals"]]
+        for p in selection.get("symbols", [])
+    }
     print(f"[source] 日线 {len(daily)} 只 / {sum(len(v) for v in daily.values())} 根")
     print(f"[source] 5 分钟线 {len(minutes)} 只 / {sum(len(v) for v in minutes.values())} 根")
+    print(f"[source] 选股命中 {len(signals)} 只 / {sum(len(v) for v in signals.values())} 个信号日")
 
     symbols: dict[str, dict] = {}
     for code, daily_bars in daily.items():
@@ -161,16 +194,21 @@ def main() -> int:
             print(f"  - {code} 分钟数据不足或与日线不重叠，跳过")
             continue
         symbols[code] = {"day": item["day"], "m5": item["m5"]}
+        if code in fund:
+            symbols[code]["fundamentals"] = fund[code]
         first, last = item["m5"][0][0], item["m5"][-1][0]
         print(f"  + {code} 日线 {len(item['day'])} 根 · 分时 {len(item['m5'])} 根 "
               f"{first} ~ {last} · 校准漂移 {item['drift']:.3%}")
     if not symbols:
         raise SystemExit("没有任何标的能同时对齐全两个窗口，已中止；不生成半成品数据")
 
-    games = make_games(symbols, args.per_symbol, random.Random(args.seed))
+    games = make_games(symbols, signals, args.per_symbol, random.Random(args.seed))
+    with_signal = sum(1 for g in games if g.get("signal"))
+    if not with_signal:
+        raise SystemExit("对局包里没有任何一局包含选股信号，已中止；不生成无意义数据")
     history_bars = sum(len(v["day"]) for v in symbols.values())
     body = {
-        "version": 4,
+        "version": 5,
         "windows": WINDOWS,
         "symbols": symbols,
         "games": games,
@@ -181,15 +219,21 @@ def main() -> int:
     (OUT_DIR / filename).write_bytes(raw)
 
     manifest = {
-        "version": 4,
+        "version": 5,
         "generatedAt": datetime.now(timezone.utc).isoformat(timespec="seconds"),
-        "source": "baostock 前复权日线（2015 起完整历史） + 新浪 5 分钟线",
+        "source": "baostock 前复权日线（2015 起完整历史） + 新浪 5 分钟线 + 腾讯股本快照",
         "adjust": "前复权，逐日按收盘价对齐",
         "dataFile": filename,
         "bytes": len(raw),
         "symbols": len(symbols),
         "games": len(games),
         "historyBars": history_bars,
+        "selection": {
+            "symbols": len(signals),
+            "signals": sum(len(v) for v in signals.values()),
+            "scanned": selection.get("scanned", 0),
+            "gamesWithSignal": with_signal,
+        },
         "windows": WINDOWS,
         "periods": WINDOWS,  # 兼容旧前端读取，语义已改为「时间窗口」
     }
@@ -202,8 +246,8 @@ def main() -> int:
             old.unlink()
 
     print(f"\n[ok] {filename}  {len(raw)/1024/1024:.2f} MB · "
-          f"{len(symbols)} 只 · {len(games)} 局 · 2 个时间窗口 · "
-          f"完整日线 {history_bars} 根")
+          f"{len(symbols)} 只 · {len(games)} 局（含信号 {with_signal} 局）· "
+          f"4 个时间窗口 · 完整日线 {history_bars} 根")
     return 0
 
 
