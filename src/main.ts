@@ -158,7 +158,8 @@ function renderReview(): void {
       <section class="reveal">
         <div>
           <h2>复盘</h2>
-          <p class="reveal-line">标的 <b>${r.code}</b> · ${r.startDate} ~ ${r.endDate}</p>
+          <p class="reveal-line">标的 <b>${r.code}</b></p>
+          <p class="reveal-line">${r.startDate} ~ ${r.endDate}</p>
         </div>
         <div class="score-big"><span>评分</span><b>${r.score.total}</b></div>
       </section>

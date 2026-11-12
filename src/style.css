@@ -424,7 +424,7 @@ h1 {
 }
 
 .reveal h2 { margin: 0 0 4px; font-size: 16px; font-weight: 600; }
-.reveal-line { margin: 0; color: var(--muted); font-size: 12px; }
+.reveal-line { margin: 0; color: var(--muted); font-size: 12px; line-height: 1.5; }
 .reveal-line b { color: var(--text); }
 
 .score-big {
