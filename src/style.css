@@ -83,3 +83,142 @@ h1 {
   font-size: 13px;
   line-height: 1.6;
 }
+
+.guide {
+  --accent: #6ea8fe;
+  margin-top: 24px;
+  padding: 18px 16px 16px;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: var(--panel);
+}
+
+.guide h2 {
+  margin: 0 0 6px;
+  font-size: 16px;
+  font-weight: 600;
+}
+
+.guide-lead {
+  margin: 0 0 16px;
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.65;
+}
+
+.guide-lead b,
+.steps b,
+.guide-tip b {
+  color: var(--text);
+  font-weight: 600;
+}
+
+.ios-bar {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 12px;
+  margin-bottom: 18px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--bg);
+}
+
+.ios-pill {
+  flex: 1;
+  min-width: 0;
+  padding: 8px 12px;
+  border-radius: 999px;
+  background: var(--panel);
+  color: var(--muted);
+  font-size: 12px;
+  text-align: center;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.ios-more {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 3px;
+  flex: 0 0 34px;
+  width: 34px;
+  height: 34px;
+  border-radius: 50%;
+  border: 1px solid var(--accent);
+  background: rgba(110, 168, 254, 0.12);
+}
+
+.ios-more i {
+  width: 4px;
+  height: 4px;
+  border-radius: 50%;
+  background: var(--accent);
+}
+
+.ios-tap {
+  position: absolute;
+  right: 8px;
+  top: -10px;
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: var(--accent);
+  color: #0d1320;
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.steps {
+  margin: 0;
+  padding-left: 22px;
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.7;
+}
+
+.steps li + li {
+  margin-top: 10px;
+}
+
+.steps li::marker {
+  color: var(--accent);
+  font-weight: 600;
+}
+
+.kbd {
+  display: inline-block;
+  padding: 0 6px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: var(--bg);
+  color: var(--text);
+}
+
+.ico {
+  width: 14px;
+  height: 14px;
+  vertical-align: -2px;
+  color: var(--accent);
+}
+
+.guide-tip {
+  margin: 14px 0 0;
+  padding-top: 12px;
+  border-top: 1px solid var(--line);
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.6;
+}
+
+.ok {
+  margin-top: 20px;
+  padding: 12px 14px;
+  border: 1px solid var(--down);
+  border-radius: 12px;
+  color: var(--text);
+  font-size: 13px;
+  line-height: 1.6;
+}
