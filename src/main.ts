@@ -9,7 +9,7 @@ import {
   saveRecord,
   toStored,
 } from './engine/records'
-import { ChartView } from './ui/chart'
+import { ChartView, indicatorLegend } from './ui/chart'
 import { renderCurve } from './ui/curve'
 
 const root = document.querySelector<HTMLDivElement>('#app')
@@ -123,6 +123,7 @@ function renderTrain(): void {
         <div><span>浮动盈亏</span><b id="s-profit" class="${e.profit >= 0 ? 'up' : 'down'}">${pct(e.profitPct)}</b></div>
         <div><span>进度</span><b id="s-progress">${e.index + 1} / ${e.total}</b></div>
       </section>
+      <div class="indicator-legend" id="indicator-legend">${indicatorLegend(e.visible())}</div>
       <div id="chart" class="chart"></div>
       <p class="blind-note">股票名称与日期已隐藏 · 只能看到已推进的 K 线</p>
       <section class="controls">
@@ -171,6 +172,7 @@ function renderReview(): void {
         <div><span>最大回撤</span><b>${r.score.maxDrawdown.toFixed(2)}%</b></div>
         <div><span>交易 / 胜率</span><b>${r.score.tradeCount} / ${r.score.winRate}%</b></div>
       </section>
+      <div class="indicator-legend" id="indicator-legend">${indicatorLegend(r.candles)}</div>
       <div id="chart" class="chart"></div>
       <p class="blind-note">上图为完整走势；买卖点标记在下方资金曲线上</p>
       <section class="panel">
@@ -240,6 +242,8 @@ function render(): void {
 function updateTrainUI(newBar?: Candle): void {
   if (!engine) return
   if (newBar) chartView?.appendBar(newBar)
+  const legend = document.getElementById('indicator-legend')
+  if (legend) legend.innerHTML = indicatorLegend(engine.visible())
   const set = (id: string, text: string, cls?: string): void => {
     const el = document.getElementById(id)
     if (!el) return
