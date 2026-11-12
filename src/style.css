@@ -340,6 +340,7 @@ h1 {
 .indicator-legend .vol-item { flex: 0 0 auto; color: var(--text); }
 .indicator-legend .legend-tag {
   flex: 0 0 auto;
+  margin-left: auto;
   padding: 1px 5px;
   border: 1px solid var(--line);
   border-radius: 4px;

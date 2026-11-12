@@ -1,6 +1,6 @@
 /* kline-replay 离线缓存：同源 GET 走 cache-first，后台顺带更新 */
 // 升版本会清掉旧缓存里已被替换的数据包，避免 iOS 上历史文件越积越多
-const CACHE = 'kline-replay-v5'
+const CACHE = 'kline-replay-v6'
 const CORE = ['./', './index.html', './manifest.webmanifest']
 
 self.addEventListener('install', (event) => {

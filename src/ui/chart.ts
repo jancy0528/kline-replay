@@ -3,10 +3,12 @@ import type { Candle } from '../engine/replay'
 
 const BASE_TS = Date.UTC(2020, 0, 1)
 const DAY_MS = 86_400_000
+/** 开局默认的单根 K 线宽度：390px 屏一屏约 30 根，能看清近期形态。 */
+const DEFAULT_BAR_SPACE = 12
 
-export const MA_PERIODS = [5, 10, 20, 30] as const
-/** 白 / 黄 / 紫 对应截图里的 MA5/MA10/MA20，第四条 MA30 用青色。 */
-export const MA_COLORS = ['#e8edf7', '#f5c451', '#c07cf0', '#54d6c0'] as const
+/** 对齐截图里的三条均线：MA5 / MA10 / MA20，白 / 黄 / 紫。 */
+export const MA_PERIODS = [5, 10, 20] as const
+export const MA_COLORS = ['#e8edf7', '#f5c451', '#c07cf0'] as const
 export const VOL_MA_PERIODS = [5, 10] as const
 
 /** 库默认把大数字写成 5.14M / 513K，中文界面改用万、亿。 */
@@ -30,16 +32,15 @@ function maAt(candles: Candle[], period: number): number | null {
 
 /**
  * 贴在周期栏下方的图例行，对应截图「均线▾ · MA5:20.82 10:20.89 20:20.39 · 前复权」。
- * 成交量副图的量均线数值由 KLineCharts 自己的 tooltip 展示，这里只给最新量。
+ * 只放三条均线＋前复权：390px 下一行刚好放得下，不需要横滑，也不会把标签挤出裁切。
+ * 成交量与量均线数值由副图柱子和十字光标 tooltip 展示。
  */
 export function indicatorLegend(candles: Candle[], viewLabel = '日线'): string {
   const mas = MA_PERIODS.map((period, i) => {
     const value = maAt(candles, period)
     return `<span class="ma-item" style="color:${MA_COLORS[i]}">MA${period} ${value === null ? '—' : value.toFixed(2)}</span>`
   }).join('')
-  const last = candles[candles.length - 1]
-  const volume = last ? `${formatBigNumberCN(last.volume)}股` : '—'
-  return `<span class="legend-prefix">均线▾ · ${viewLabel}</span>${mas}<span class="vol-item">量 ${volume}</span><span class="legend-tag">前复权</span>`
+  return `<span class="legend-prefix">均线▾ · ${viewLabel}</span>${mas}<span class="legend-tag">前复权</span>`
 }
 
 // A 股习惯：红涨绿跌。KLineCharts 默认相反（绿涨红跌），必须整体翻转。
@@ -166,6 +167,16 @@ export class ChartView {
         // 画线依赖的坐标系已变化，丢弃即可，不影响行情
       }
     }
+    // 换局、切换时间窗口时坐标系全变，必须把缩放拉回默认并停在最右端；
+    // 否则上一局点过「最早」(barSpace=1) 会继承下来，把 2800 根压成一屏。
+    // keepDrawings=true 是同一局内推进造成的当日 K 重合成，视口要保持不变。
+    if (!keepDrawings) this.resetViewport()
+  }
+
+  private resetViewport(): void {
+    if (!this.chart) return
+    this.chart.setBarSpace(DEFAULT_BAR_SPACE)
+    this.chart.scrollToRealTime()
   }
 
   get barCount(): number {
@@ -194,9 +205,9 @@ export class ChartView {
     this.chart.setBarSpace(Math.max(1, Math.min(40, space * factor)))
   }
 
-  /** 拉回最右端的最新 K 线。 */
+  /** 回到默认缩放下的最新 K 线（「最早/缩小」之后的复原入口）。 */
   toLatest(): void {
-    this.chart?.scrollToRealTime()
+    this.resetViewport()
   }
 
   /** 缩到最小并跳到历史起点，用来回看 2015 年以来的长期走势。 */
