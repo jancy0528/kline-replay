@@ -139,9 +139,24 @@ export class ChartView {
     this.chart = chart
   }
 
-  setBars(candles: Candle[]): void {
+  /**
+   * 全量重设。日线视图推进时当日 K 会被重新合成，必须整体替换；
+   * keepDrawings=true 时把用户已画好的线按原坐标重建，避免推进一次就丢。
+   * 切换时间窗口时坐标系完全不同，应传 false 清掉画线。
+   */
+  setBars(candles: Candle[], keepDrawings = false): void {
+    const saved = keepDrawings && this.chart
+      ? this.chart.getOverlays().map((o) => ({ ...o }))
+      : []
     this.bars = candles.map(toKLine)
     this.chart?.resetData()
+    if (saved.length && this.chart) {
+      try {
+        this.chart.createOverlay(saved as never)
+      } catch {
+        // 画线依赖的坐标系已变化，丢弃即可，不影响行情
+      }
+    }
   }
 
   appendBar(candle: Candle): void {

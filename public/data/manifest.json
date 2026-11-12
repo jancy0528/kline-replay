@@ -1,68 +1,42 @@
 {
-  "version": 2,
-  "generatedAt": "2026-11-12T07:13:52+00:00",
-  "source": "baostock (local cache)",
-  "adjust": "前复权",
-  "periods": [
+  "version": 3,
+  "generatedAt": "2026-11-12T09:17:48+00:00",
+  "source": "baostock 日线 + 东方财富 5 分钟线",
+  "adjust": "前复权，逐日按收盘价对齐",
+  "dataFile": "sessions-526caa8dda.json",
+  "bytes": 832651,
+  "symbols": 15,
+  "games": 240,
+  "windows": [
     {
       "key": "m5",
-      "label": "分时·5分",
-      "file": null,
+      "label": "分时",
       "visible": 60,
-      "max": 80,
-      "segments": 0,
-      "bytes": 0,
-      "note": "以 5 分钟 K 线近似分时；公开数据源最细只到 5 分钟"
-    },
-    {
-      "key": "m30",
-      "label": "30分钟",
-      "file": null,
-      "visible": 60,
-      "max": 80,
-      "segments": 0,
-      "bytes": 0,
-      "note": ""
-    },
-    {
-      "key": "m60",
-      "label": "60分钟",
-      "file": null,
-      "visible": 60,
-      "max": 80,
-      "segments": 0,
-      "bytes": 0,
-      "note": ""
+      "advance": 480,
+      "note": "5 分钟 K 线，公开数据源最细只到 5 分钟"
     },
     {
       "key": "day",
       "label": "日线",
-      "file": "day-c7ff7d0061.json",
       "visible": 60,
-      "max": 80,
-      "segments": 200,
-      "bytes": 1462950,
-      "note": ""
+      "advance": 480,
+      "note": "当日 K 由已揭示的分钟线合成，不泄露未来"
+    }
+  ],
+  "periods": [
+    {
+      "key": "m5",
+      "label": "分时",
+      "visible": 60,
+      "advance": 480,
+      "note": "5 分钟 K 线，公开数据源最细只到 5 分钟"
     },
     {
-      "key": "week",
-      "label": "周线",
-      "file": "week-b2d4cebde7.json",
-      "visible": 40,
-      "max": 60,
-      "segments": 200,
-      "bytes": 1066010,
-      "note": ""
-    },
-    {
-      "key": "month",
-      "label": "月线",
-      "file": "month-96581163e3.json",
-      "visible": 24,
-      "max": 36,
-      "segments": 200,
-      "bytes": 657007,
-      "note": ""
+      "key": "day",
+      "label": "日线",
+      "visible": 60,
+      "advance": 480,
+      "note": "当日 K 由已揭示的分钟线合成，不泄露未来"
     }
   ]
 }

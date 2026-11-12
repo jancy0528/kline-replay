@@ -1,4 +1,4 @@
-import type { Bar, PeriodKey, PeriodMeta, Segment } from '../data/segments'
+import type { Bar, Game, PeriodKey, SymbolData, WindowMeta } from '../data/segments'
 import {
   DEFAULT_FEE_SCHEDULE,
   ZERO_FEES,
@@ -10,6 +10,11 @@ import {
   type InstrumentKind,
   type InstrumentRule,
 } from './fees'
+import {
+  runOrders,
+  type ConditionalOrder,
+  type OrderSide,
+} from './orders'
 
 export interface Candle {
   timestamp: number
@@ -21,16 +26,19 @@ export interface Candle {
 }
 
 export interface Trade {
+  /** 第几步推进（资金曲线横轴），不是 K 线序号 */
   index: number
   date: string
   side: 'buy' | 'sell'
   price: number
   shares: number
   fee: number
-  /** 旧版本记录没有以下三个字段，展示时按 fee 兜底。 */
+  /** 旧版本记录没有以下字段，展示时按 fee 兜底。 */
   amount?: number
   fees?: FeeBreakdown
   pnl: number | null
+  source?: 'manual' | 'order'
+  orderId?: string
 }
 
 export interface Score {
@@ -57,62 +65,81 @@ export interface SessionResult {
   equityCurve: number[]
   candles: Candle[]
   playedAt: number
-  /** 本局适用的品种与费率快照：换费率后历史记录仍可核对当时口径。 */
   instrumentKind: InstrumentKind
   feeRule: InstrumentRule
   feeTotal: FeeBreakdown
+  /** 本局条件单快照，复盘可核对触发价与失败原因 */
+  orders?: ConditionalOrder[]
 }
 
 export interface EngineConfig {
   initialCash: number
   visibleBars: number
-  maxBars: number
   fees: FeeSchedule
   kind: InstrumentKind
   lotSize: number
   limitRate: number
-  period: PeriodKey
-  periodLabel: string
+  view: PeriodKey
+  viewLabel: string
 }
 
 export const DEFAULT_CONFIG: EngineConfig = {
   initialCash: 100000,
   visibleBars: 60,
-  maxBars: 80,
   fees: DEFAULT_FEE_SCHEDULE,
   kind: 'stock',
   lotSize: 100,
   limitRate: 0.1,
-  period: 'day',
-  periodLabel: '日线',
+  view: 'day',
+  viewLabel: '日线',
 }
 
-/** 窗口长度随周期变化：月线一次练完整只股票就失去随机意义，必须调短。 */
-export function configForPeriod(
-  meta: Pick<PeriodMeta, 'key' | 'label' | 'visible' | 'max'>,
+export function configForWindow(
+  meta: Pick<WindowMeta, 'key' | 'label' | 'visible'>,
   fees: FeeSchedule = DEFAULT_FEE_SCHEDULE,
 ): EngineConfig {
   return {
     ...DEFAULT_CONFIG,
     fees,
-    period: meta.key,
-    periodLabel: meta.label,
+    view: meta.key,
+    viewLabel: meta.label,
     visibleBars: meta.visible,
-    maxBars: meta.max,
   }
 }
 
 const round2 = (n: number): number => Math.round(n * 100) / 100
+const round3 = (n: number): number => Math.round(n * 1000) / 1000
 const clamp = (n: number, lo: number, hi: number): number => Math.min(hi, Math.max(lo, n))
+const dayOf = (label: string): string => label.slice(0, 10)
+
+function candleFrom(bar: Bar, timestamp: number): Candle {
+  return {
+    timestamp,
+    open: bar[1],
+    high: bar[2],
+    low: bar[3],
+    close: bar[4],
+    volume: bar[5],
+  }
+}
 
 /**
  * 回放引擎：唯一持有完整一局历史的地方。
- * 对 UI 只暴露 visible()（用序号做 timestamp，不含真实日期与股票代码），
- * 训练过程中任何视图都拿不到未来 K 线，复盘后才由 finish() 揭示答案。
+ *
+ * 一局 = 一只标的 + 一个 5 分钟序列上的时间游标。「分时」和「日线」
+ * 是同一段行情的两种视图，切换视图只改变 visible() 的聚合方式，
+ * 资金、持仓、条件单、时间游标全部不动。日线视图里「当日」那根 K
+ * 由当天截至游标的分钟 K 合成，绝不把整日 OHLC 提前暴露出去。
  */
 export class ReplayEngine {
-  private readonly bars: Bar[]
-  private cursor: number
+  private readonly minBars: Bar[]
+  private readonly dayBars: Bar[]
+  private readonly start: number
+  private readonly end: number
+  private now: number
+  private view: PeriodKey
+  private label: string
+  private step = 0
   private cash: number
   private shares = 0
   private lockedShares = 0
@@ -125,46 +152,143 @@ export class ReplayEngine {
   private wins = 0
   private closedTrades = 0
   private feeTotal: FeeBreakdown = { ...ZERO_FEES }
+  private orders: ConditionalOrder[] = []
 
   readonly id: string
   readonly code: string
   readonly startedAt: number
   readonly config: EngineConfig
 
-  private constructor(code: string, bars: Bar[], config: EngineConfig) {
+  private constructor(code: string, symbol: SymbolData, game: Game, config: EngineConfig) {
     this.code = code
-    this.bars = bars
+    this.minBars = symbol.m5
+    this.dayBars = symbol.day
+    this.start = game.s
+    this.end = game.e
+    this.now = game.s
+    this.view = config.view
+    this.label = config.viewLabel
     this.config = config
-    this.cursor = config.visibleBars - 1
     this.cash = config.initialCash
     this.peakEquity = config.initialCash
     this.id = `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`
     this.startedAt = Date.now()
-    this.trackEquity()
+    this.equityCurve.push(round2(this.equity))
   }
 
-  static create(segment: Segment, config: EngineConfig = DEFAULT_CONFIG): ReplayEngine {
-    const need = config.visibleBars + config.maxBars + 1
-    if (segment.b.length < need) {
-      throw new Error(`片段长度不足：需要 ${need} 根，实际 ${segment.b.length} 根`)
+  static create(symbol: SymbolData, game: Game, config: EngineConfig = DEFAULT_CONFIG): ReplayEngine {
+    if (symbol.m5.length < 100) throw new Error('分钟线不足，无法成局')
+    if (game.s < 1 || game.e <= game.s || game.e >= symbol.m5.length) {
+      throw new Error('对局游标越界')
     }
-    // 按标的代码推断品种，决定佣金档与是否征印花税/过户费
-    const kind = classifyInstrument(segment.c)
-    return new ReplayEngine(segment.c, segment.b.slice(0, need), { ...config, kind })
+    const kind = classifyInstrument(game.c)
+    return new ReplayEngine(game.c, symbol, game, { ...config, kind })
   }
 
-  /** 时间标签形如 2024-03-05 或 2024-03-05 10:30，前 10 位即交易日。 */
-  private tradingDay(index: number): string {
-    return this.bars[index][0].slice(0, 10)
+  // ---- 视图与行情 ----------------------------------------------------
+
+  get currentView(): PeriodKey {
+    return this.view
   }
 
-  /** 昨收：分钟线要跨到上一个交易日，而不是简单取前一根。 */
-  private previousDayClose(): number {
-    const day = this.tradingDay(this.cursor)
-    for (let i = this.cursor - 1; i >= 0; i -= 1) {
-      if (this.tradingDay(i) !== day) return this.bars[i][4]
+  get viewLabel(): string {
+    return this.label
+  }
+
+  setView(key: PeriodKey, label: string): void {
+    this.view = key
+    this.label = label
+  }
+
+  get currentPrice(): number {
+    return this.minBars[this.now][4]
+  }
+
+  get currentLabel(): string {
+    return this.minBars[this.now][0]
+  }
+
+  get currentDay(): string {
+    return dayOf(this.currentLabel)
+  }
+
+  get previousClose(): number {
+    return this.previousCloseFor(this.currentDay)
+  }
+
+  /** 相对前一交易日收盘的涨跌幅，条件单表单与盘口条共用。 */
+  get dayChangePct(): number {
+    const prev = this.previousCloseFor(this.currentDay)
+    return prev ? round2((this.currentPrice / prev - 1) * 100) : 0
+  }
+
+  private previousCloseFor(date: string): number {
+    for (let i = this.dayBars.length - 1; i >= 0; i -= 1) {
+      if (this.dayBars[i][0] < date) return this.dayBars[i][4]
     }
-    return this.cursor > 0 ? this.bars[this.cursor - 1][4] : this.bars[0][1]
+    return this.minBars[0][1]
+  }
+
+  /** 日线视图的当日 K：用当天已揭示的分钟 K 聚合，不含未来。 */
+  private todayCandle(cursor: number): Candle | null {
+    const day = dayOf(this.minBars[cursor][0])
+    let open = 0
+    let high = -Infinity
+    let low = Infinity
+    let volume = 0
+    let found = false
+    for (let i = 0; i <= cursor; i += 1) {
+      const bar = this.minBars[i]
+      if (dayOf(bar[0]) !== day) continue
+      if (!found) {
+        open = bar[1]
+        found = true
+      }
+      high = Math.max(high, bar[2])
+      low = Math.min(low, bar[3])
+      volume += bar[5]
+    }
+    if (!found) return null
+    return {
+      timestamp: this.dayBars.length,
+      open,
+      high,
+      low,
+      close: this.minBars[cursor][4],
+      volume,
+    }
+  }
+
+  /** all=true 用于复盘，给完整走势；训练时只给已揭示部分。 */
+  private candlesUntil(cursor: number, all: boolean): Candle[] {
+    if (this.view === 'm5') {
+      // 全量累积而非滑动窗口：推进时只需往图表追加一根，用户画的线不会丢。
+      // 视口由图表自动停在右端，需要看更早的行情用缩放/平移。
+      const to = all ? this.end : cursor
+      return this.minBars.slice(0, to + 1).map((bar, i) => candleFrom(bar, i))
+    }
+    const day = dayOf(this.minBars[cursor][0])
+    const out: Candle[] = []
+    this.dayBars.forEach((bar, i) => {
+      if (bar[0] < day) out.push(candleFrom(bar, i))
+    })
+    const today = this.todayCandle(cursor)
+    if (today) out.push(today)
+    return out
+  }
+
+  visible(): Candle[] {
+    return this.candlesUntil(this.now, false)
+  }
+
+  fullCandles(): Candle[] {
+    return this.candlesUntil(this.end, true)
+  }
+
+  // ---- 账户 ----------------------------------------------------------
+
+  private rule(): InstrumentRule {
+    return this.config.fees[this.config.kind] ?? this.config.fees.stock
   }
 
   private trackEquity(): void {
@@ -175,18 +299,6 @@ export class ReplayEngine {
       const drawdown = ((this.peakEquity - value) / this.peakEquity) * 100
       if (drawdown > this.maxDrawdown) this.maxDrawdown = drawdown
     }
-  }
-
-  private rule(): InstrumentRule {
-    return this.config.fees[this.config.kind] ?? this.config.fees.stock
-  }
-
-  get index(): number {
-    return this.cursor
-  }
-
-  get total(): number {
-    return this.bars.length
   }
 
   get isEnded(): boolean {
@@ -205,8 +317,20 @@ export class ReplayEngine {
     return this.shares - this.lockedShares
   }
 
+  get lockedShareCount(): number {
+    return this.lockedShares
+  }
+
+  get costPrice(): number {
+    return this.avgCost
+  }
+
   get equity(): number {
-    return this.cash + this.shares * this.bars[this.cursor][4]
+    return this.cash + this.shares * this.currentPrice
+  }
+
+  get marketValue(): number {
+    return round2(this.shares * this.currentPrice)
   }
 
   get profit(): number {
@@ -221,10 +345,6 @@ export class ReplayEngine {
     return this.trades.slice()
   }
 
-  get periodLabel(): string {
-    return this.config.periodLabel
-  }
-
   get instrumentKind(): InstrumentKind {
     return this.config.kind
   }
@@ -237,111 +357,165 @@ export class ReplayEngine {
     return { ...this.feeTotal }
   }
 
-  visible(): Candle[] {
-    return this.bars.slice(0, this.cursor + 1).map((bar, i) => ({
-      timestamp: i,
-      open: bar[1],
-      high: bar[2],
-      low: bar[3],
-      close: bar[4],
-      volume: bar[5],
-    }))
+  /** 进度用「当前视图已揭示根数 / 完整根数」表示，切换视图后仍连续。 */
+  get index(): number {
+    return this.visible().length - 1
   }
 
-  private limitFlags(): { up: boolean; down: boolean } {
-    const prev = this.previousDayClose()
-    const close = this.bars[this.cursor][4]
-    const rate = this.config.limitRate
-    return {
-      up: close >= prev * (1 + rate) - 0.001,
-      down: close <= prev * (1 - rate) + 0.001,
+  get total(): number {
+    return this.fullCandles().length
+  }
+
+  get orderList(): ConditionalOrder[] {
+    return this.orders.slice()
+  }
+
+  setOrders(list: ConditionalOrder[]): void {
+    this.orders = list.slice()
+  }
+
+  // ---- 推进 ----------------------------------------------------------
+
+  /** 日线视图一次推进一根完整日 K：先补完当天，再逐日往前。 */
+  private nextDayCursor(): number {
+    const day = this.currentDay
+    let todayEnd = this.now
+    for (let i = this.now; i <= this.end; i += 1) {
+      if (dayOf(this.minBars[i][0]) !== day) break
+      todayEnd = i
     }
+    if (todayEnd > this.now) return todayEnd
+    for (let i = this.now + 1; i <= this.end; i += 1) {
+      if (dayOf(this.minBars[i][0]) === day) continue
+      const nextDay = dayOf(this.minBars[i][0])
+      let last = i
+      while (last + 1 <= this.end && dayOf(this.minBars[last + 1][0]) === nextDay) last += 1
+      return last
+    }
+    return this.end
   }
 
   advance(): boolean {
     if (this.ended) return false
-    if (this.cursor < this.bars.length - 1) {
-      const previousDay = this.tradingDay(this.cursor)
-      this.cursor += 1
-      // T+1 按交易日解锁：同一交易日的分钟 K 线之间不允许卖出当日买入的股份
-      if (this.tradingDay(this.cursor) !== previousDay) this.lockedShares = 0
-      this.trackEquity()
+    const target = this.view === 'm5'
+      ? Math.min(this.now + 1, this.end)
+      : this.nextDayCursor()
+
+    for (let i = this.now + 1; i <= target; i += 1) {
+      const bar = this.minBars[i]
+      const prevDay = dayOf(this.minBars[i - 1][0])
+      if (dayOf(bar[0]) !== prevDay) this.lockedShares = 0
+      this.now = i
+      // 条件单按 5 分钟 K 逐根判定，日线视图下一次跨多根也会依次执行
+      this.orders = runOrders(this.orders, bar, i, (o, price) =>
+        this.executeOrder(o, price, i),
+      )
     }
-    if (this.cursor >= this.bars.length - 1) this.ended = true
+    this.step += 1
+    this.trackEquity()
+    if (this.now >= this.end) this.ended = true
     return !this.ended
   }
 
-  buy(requested: number = this.config.lotSize): { ok: boolean; reason?: string } {
+  // ---- 成交 ----------------------------------------------------------
+
+  private limitFlagsAt(bar: Bar): { up: boolean; down: boolean } {
+    const prev = this.previousCloseFor(dayOf(bar[0]))
+    const rate = this.config.limitRate
+    return {
+      up: bar[4] >= prev * (1 + rate) - 0.001,
+      down: bar[4] <= prev * (1 - rate) + 0.001,
+    }
+  }
+
+  private execute(
+    side: OrderSide,
+    requested: number,
+    price: number,
+    index: number,
+    label: string,
+    source: 'manual' | 'order',
+    orderId?: string,
+  ): { ok: boolean; reason?: string } {
     if (this.ended) return { ok: false, reason: '本局已结束' }
     const lot = this.config.lotSize
-    const qty = Math.floor(requested / lot) * lot
+    let qty = Math.floor(requested / lot) * lot
     if (qty <= 0) return { ok: false, reason: `最小 ${lot} 股` }
-    if (this.limitFlags().up) return { ok: false, reason: '涨停，无法买入' }
+    const flags = this.limitFlagsAt(this.minBars[index])
+    if (side === 'buy' && flags.up) return { ok: false, reason: '涨停，无法买入' }
+    if (side === 'sell' && flags.down) return { ok: false, reason: '跌停，无法卖出' }
 
-    const price = this.bars[this.cursor][4]
+    if (side === 'sell') {
+      qty = Math.min(this.availableShares, qty)
+      if (qty <= 0) {
+        return {
+          ok: false,
+          reason: this.lockedShares > 0 ? 'T+1：当日买入次日才能卖' : '没有可卖持仓',
+        }
+      }
+    }
+
     const amount = qty * price
-    const fees = computeFees(amount, 'buy', this.config.kind, this.config.fees)
-    if (this.cash + 0.001 < amount + fees.total) return { ok: false, reason: '可用资金不足' }
+    const fees = computeFees(amount, side, this.config.kind, this.config.fees)
+    let pnl: number | null = null
+    if (side === 'buy') {
+      if (this.cash + 0.001 < amount + fees.total) {
+        return { ok: false, reason: '可用资金不足' }
+      }
+      const totalCost = this.avgCost * this.shares + amount + fees.total
+      this.cash -= amount + fees.total
+      this.shares += qty
+      this.lockedShares += qty
+      this.avgCost = totalCost / this.shares
+    } else {
+      pnl = (price - this.avgCost) * qty - fees.total
+      this.cash += amount - fees.total
+      this.shares -= qty
+      this.closedTrades += 1
+      if (pnl > 0) this.wins += 1
+      if (this.shares === 0) this.avgCost = 0
+    }
 
-    const totalCost = this.avgCost * this.shares + amount + fees.total
-    this.cash -= amount + fees.total
-    this.shares += qty
-    this.lockedShares += qty
-    this.avgCost = totalCost / this.shares
     this.feeTotal = addFees(this.feeTotal, fees)
     this.trades.push({
-      index: this.cursor,
-      date: this.bars[this.cursor][0],
-      side: 'buy',
-      price: round2(price),
+      index: this.step,
+      date: label,
+      side,
+      price: round3(price),
       shares: qty,
       fee: fees.total,
       amount: round2(amount),
       fees,
-      pnl: null,
+      pnl: pnl === null ? null : round2(pnl),
+      source,
+      orderId,
     })
     return { ok: true }
   }
 
-  sell(requested: number = this.config.lotSize): { ok: boolean; reason?: string } {
-    if (this.ended) return { ok: false, reason: '本局已结束' }
-    const lot = this.config.lotSize
-    const qty = Math.min(this.availableShares, Math.floor(requested / lot) * lot)
-    if (qty <= 0) {
-      return {
-        ok: false,
-        reason: this.lockedShares > 0 ? 'T+1：当日买入次日才能卖' : '没有可卖持仓',
-      }
-    }
-    if (this.limitFlags().down) return { ok: false, reason: '跌停，无法卖出' }
+  private executeOrder(o: ConditionalOrder, price: number, index: number) {
+    return this.execute(
+      o.side,
+      o.shares,
+      price,
+      index,
+      this.minBars[index][0],
+      'order',
+      o.id,
+    )
+  }
 
-    const price = this.bars[this.cursor][4]
-    const amount = qty * price
-    const fees = computeFees(amount, 'sell', this.config.kind, this.config.fees)
-    const pnl = (price - this.avgCost) * qty - fees.total
-    this.cash += amount - fees.total
-    this.shares -= qty
-    this.closedTrades += 1
-    if (pnl > 0) this.wins += 1
-    if (this.shares === 0) this.avgCost = 0
-    this.feeTotal = addFees(this.feeTotal, fees)
-    this.trades.push({
-      index: this.cursor,
-      date: this.bars[this.cursor][0],
-      side: 'sell',
-      price: round2(price),
-      shares: qty,
-      fee: fees.total,
-      amount: round2(amount),
-      fees,
-      pnl: round2(pnl),
-    })
-    return { ok: true }
+  buy(requested: number = this.config.lotSize): { ok: boolean; reason?: string } {
+    return this.execute('buy', requested, this.currentPrice, this.now, this.currentLabel, 'manual')
+  }
+
+  sell(requested: number = this.config.lotSize): { ok: boolean; reason?: string } {
+    return this.execute('sell', requested, this.currentPrice, this.now, this.currentLabel, 'manual')
   }
 
   /** 精确求解：最低佣金让费用非线性，先估上界再逐手回退，保证全仓买入不会买超。 */
   maxBuyable(): number {
-    const price = this.bars[this.cursor][4]
+    const price = this.currentPrice
     const lot = this.config.lotSize
     const rule = this.rule()
     let lots = Math.floor(
@@ -360,8 +534,8 @@ export class ReplayEngine {
   finish(): SessionResult {
     this.ended = true
     const finalEquity = round2(this.equity)
-    const first = this.bars[0][4]
-    const last = this.bars[this.bars.length - 1][4]
+    const first = this.minBars[this.start][4]
+    const last = this.minBars[this.end][4]
     const benchmarkPct = round2((last / first - 1) * 100)
     const pnlPct = round2((finalEquity / this.config.initialCash - 1) * 100)
     const excessPct = round2(pnlPct - benchmarkPct)
@@ -379,10 +553,10 @@ export class ReplayEngine {
     return {
       id: this.id,
       code: this.code,
-      period: this.config.period,
-      periodLabel: this.config.periodLabel,
-      startDate: this.bars[0][0],
-      endDate: this.bars[this.bars.length - 1][0],
+      period: this.view,
+      periodLabel: this.label,
+      startDate: this.minBars[this.start][0],
+      endDate: this.minBars[this.end][0],
       initialCash: this.config.initialCash,
       finalEquity,
       score: {
@@ -396,18 +570,12 @@ export class ReplayEngine {
       },
       trades: this.trades.slice(),
       equityCurve: this.equityCurve.slice(),
-      candles: this.bars.map((bar, i) => ({
-        timestamp: i,
-        open: bar[1],
-        high: bar[2],
-        low: bar[3],
-        close: bar[4],
-        volume: bar[5],
-      })),
+      candles: this.fullCandles(),
       playedAt: this.startedAt,
       instrumentKind: this.config.kind,
       feeRule: { ...this.rule() },
       feeTotal: { ...this.feeTotal },
+      orders: this.orders.slice(),
     }
   }
 }

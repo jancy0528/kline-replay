@@ -1,16 +1,16 @@
 import './style.css'
 import {
   loadManifest,
-  loadPackage,
-  pickSegment,
+  loadSessions,
+  pickGame,
+  windowMeta,
   type DataManifest,
   type PeriodKey,
-  type PeriodMeta,
-  type SegmentPackage,
+  type SessionPackage,
 } from './data/segments'
 import {
   ReplayEngine,
-  configForPeriod,
+  configForWindow,
   type Candle,
   type SessionResult,
   type Trade,
@@ -46,6 +46,16 @@ import {
   syncNow,
   type SyncConfig,
 } from './engine/sync'
+import {
+  newOrderId,
+  orderText,
+  pauseOnSwitch,
+  statusText,
+  type ConditionalOrder,
+  type OrderSide,
+  type OrderStatus,
+  type OrderTrigger,
+} from './engine/orders'
 import { ChartView, formatBigNumberCN, indicatorLegend } from './ui/chart'
 import { renderCurve } from './ui/curve'
 
@@ -53,7 +63,18 @@ const root = document.querySelector<HTMLDivElement>('#app')
 if (!root) throw new Error('#app not found')
 const app: HTMLDivElement = root
 
-type View = 'train' | 'review' | 'records'
+type View = 'train' | 'review' | 'records' | 'orders' | 'orderEdit'
+type OrderTab = 'watching' | 'triggered' | 'failed'
+
+interface OrderDraft {
+  editingId: string | null
+  trigger: OrderTrigger
+  price: number
+  side: OrderSide
+  shares: number
+  unit: 'shares' | 'amount'
+  amount: number
+}
 
 const standalone =
   window.matchMedia('(display-mode: standalone)').matches ||
@@ -64,12 +85,10 @@ const money = (n: number): string => `¥${nf.format(n)}`
 const yuan2 = (n: number): string => `¥${n.toFixed(2)}`
 const wanLabel = (rate: number): string => `万${toWan(rate)}`
 const pct = (n: number): string => `${n >= 0 ? '+' : ''}${n.toFixed(2)}%`
+const round2 = (n: number): number => Math.round(n * 100) / 100
 const dateTime = (ts: number): string =>
   new Date(ts).toLocaleString('zh-CN', {
-    month: '2-digit',
-    day: '2-digit',
-    hour: '2-digit',
-    minute: '2-digit',
+    month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit',
   })
 const errText = (err: unknown): string => (err instanceof Error ? err.message : String(err))
 const feeParts = (f: FeeBreakdown): string =>
@@ -77,17 +96,18 @@ const feeParts = (f: FeeBreakdown): string =>
 
 let view: View = 'train'
 let manifest: DataManifest | null = null
-let currentMeta: PeriodMeta | null = null
-let currentPackage: SegmentPackage | null = null
+let sessions: SessionPackage | null = null
 let engine: ReplayEngine | null = null
 let result: SessionResult | null = null
 let chartView: ChartView | null = null
 let loading = true
-let loadingLabel = '离线数据'
+let loadingLabel = '训练数据'
 let loadError = ''
 let autoPlaying = false
 let autoTimer = 0
 let toastTimer = 0
+let orderTab: OrderTab = 'watching'
+let draft: OrderDraft | null = null
 
 function toast(message: string): void {
   let node = document.querySelector<HTMLDivElement>('#toast')
@@ -133,33 +153,30 @@ function header(active: View): string {
   </header>`
 }
 
-function periodBar(): string {
-  const items = manifest?.periods ?? []
+/** 时间窗口栏：只有「分时」「日线」，切换的是同一局同一只股票的 K 线粒度。 */
+function windowBar(e: ReplayEngine): string {
+  const items = sessions?.windows ?? []
   const buttons = items
-    .map((p) => {
-      const active = p.key === currentMeta?.key
-      const disabled = !p.file
-      const label = disabled ? `${p.label}·待补` : p.label
-      // 不用 disabled：手机上点不到就不知道为什么，改为点击后给出补齐提示
-      return `<button data-period="${p.key}" class="${active ? 'on' : ''} ${disabled ? 'pending' : ''}">${label}</button>`
-    })
+    .map((w) => `<button data-window="${w.key}" class="${w.key === e.currentView ? 'on' : ''}">${w.label}</button>`)
     .join('')
-  return `<div class="period-bar">${buttons}</div>`
+  const watching = e.orderList.filter((o) => o.status === 'watching').length
+  return `<div class="window-bar">
+      <div class="window-tabs">${buttons}</div>
+      <button class="order-entry" data-action="orders">条件单${watching ? `<b>${watching}</b>` : ''}</button>
+    </div>
+    <p class="window-hint">${e.viewLabel}视图 · 同一只股票、同一时间；切换只换 K 线粒度，不换股、不重开局</p>`
 }
 
-function quoteBar(candles: Candle[]): string {
+function quoteBar(candles: Candle[], prevClose: number, dayChg: number): string {
   const c = candles[candles.length - 1]
   if (!c) return ''
-  const prev = candles[candles.length - 2]
-  const prevClose = prev?.close ?? c.open
-  const chg = prevClose ? (c.close / prevClose - 1) * 100 : 0
   const cls = (v: number): string => (v >= prevClose ? 'up' : 'down')
   return `<div class="quote" id="quote">
     <span>开 <b class="${cls(c.open)}">${c.open.toFixed(2)}</b></span>
     <span>高 <b class="${cls(c.high)}">${c.high.toFixed(2)}</b></span>
     <span>低 <b class="${cls(c.low)}">${c.low.toFixed(2)}</b></span>
     <span>收 <b class="${cls(c.close)}">${c.close.toFixed(2)}</b></span>
-    <span class="quote-chg ${chg >= 0 ? 'up' : 'down'}">${pct(chg)}</span>
+    <span class="quote-chg ${dayChg >= 0 ? 'up' : 'down'}">日涨跌 ${pct(dayChg)}</span>
     <span>量 <b>${formatBigNumberCN(c.volume)}</b></span>
   </div>`
 }
@@ -176,7 +193,6 @@ function chartTools(): string {
   </div>`
 }
 
-/** 训练页顶部的费率提示：品种、佣金档、税费规则、本局累计费用。 */
 function feeNote(e: ReplayEngine): string {
   const r = e.feeRule
   const stamp = r.stampDutyRate ? `${wanLabel(r.stampDutyRate)}·卖出` : '免'
@@ -203,11 +219,12 @@ function renderTrades(trades: Trade[]): string {
       return `<div class="trade">
         <div class="trade-main">
           <span class="tag ${t.side}">${t.side === 'buy' ? '买' : '卖'}</span>
-          <span>第 ${t.index + 1} 根</span>
+          ${t.source === 'order' ? '<span class="tag order">条件</span>' : ''}
+          <span>第 ${t.index + 1} 步</span>
           <span>${t.shares} 股 @ ${t.price.toFixed(3)}</span>
           ${pnl}
         </div>
-        <div class="trade-fee">${feeLine}</div>
+        <div class="trade-fee">${t.date.slice(5, 16)} · ${feeLine}</div>
       </div>`
     })
     .join('')
@@ -228,14 +245,14 @@ function renderTrain(): void {
   const candles = e.visible()
   app.innerHTML = `${header('train')}
     <main class="page">
-      ${periodBar()}
+      ${windowBar(e)}
       <section class="stats">
         <div><span>可用资金</span><b id="s-cash">${money(e.cashValue)}</b></div>
         <div><span>持仓</span><b id="s-shares">${e.shareCount} 股</b></div>
         <div><span>浮动盈亏</span><b id="s-profit" class="${e.profit >= 0 ? 'up' : 'down'}">${pct(e.profitPct)}</b></div>
-        <div><span>进度</span><b id="s-progress">${e.index + 1} / ${e.total}</b></div>
+        <div><span>已揭示</span><b id="s-progress">${e.index + 1} / ${e.total}</b></div>
       </section>
-      <div id="quote-wrap">${quoteBar(candles)}</div>
+      <div id="quote-wrap">${quoteBar(candles, e.previousClose, e.dayChangePct)}</div>
       <div class="indicator-legend" id="indicator-legend">${indicatorLegend(candles)}</div>
       <div id="chart" class="chart"></div>
       ${chartTools()}
@@ -278,6 +295,12 @@ function renderReview(): void {
   const transferText = r.feeRule.transferRate
     ? `${wanLabel(r.feeRule.transferRate)}（双向）`
     : '免征'
+  const orderRows = (r.orders ?? [])
+    .map((o) => `<div class="order-review-row">
+        <span>${orderText(o)}</span>
+        <b class="${o.status === 'triggered' ? 'up' : o.status === 'failed' ? 'down' : ''}">${statusText(o)}${o.triggeredPrice ? ` @ ${o.triggeredPrice.toFixed(3)}` : ''}${o.status === 'failed' && o.reason ? ` · ${o.reason}` : ''}</b>
+      </div>`)
+    .join('')
   app.innerHTML = `${header('train')}
     <main class="page">
       <section class="reveal">
@@ -310,6 +333,7 @@ function renderReview(): void {
         </div>
         <p class="tip fee-tip">${KIND_LABEL[r.instrumentKind]} · 佣金 ${wanLabel(r.feeRule.commissionRate)}（单笔最低 ${yuan2(r.feeRule.minCommission)}）· 印花 ${stampText} · 过户 ${transferText}。费用已在每笔成交时从资金实时扣除。</p>
       </section>
+      ${r.orders?.length ? `<section class="panel"><h3>条件单（${r.orders.length}）</h3>${orderRows}</section>` : ''}
       <section class="panel">
         <h3>资金曲线</h3>
         ${renderCurve(r.equityCurve, r.trades)}
@@ -326,6 +350,254 @@ function renderReview(): void {
     </main>`
   mountChart(r.candles)
 }
+
+// ---- 条件单 ---------------------------------------------------------
+
+function subbar(title: string, right: string): string {
+  return `<header class="subbar">
+    <button data-action="orders" class="subbar-back">‹</button>
+    <h2>${title}</h2>
+    ${right}
+  </header>`
+}
+
+function renderOrders(): void {
+  const e = engine
+  const list = e?.orderList ?? []
+  const count = (s: OrderStatus): number =>
+    s === 'watching' ? list.filter((o) => o.status === 'watching' || o.status === 'paused').length
+      : list.filter((o) => o.status === s).length
+  const tabs: { key: OrderTab; label: string }[] = [
+    { key: 'watching', label: '监控中' },
+    { key: 'triggered', label: '已触发' },
+    { key: 'failed', label: '已失败' },
+  ]
+  const tabHtml = tabs
+    .map((t) => `<button data-action="orderTab" data-value="${t.key}" class="${orderTab === t.key ? 'on' : ''}">${t.label} ${count(t.key)}</button>`)
+    .join('')
+  const shown = list.filter((o) =>
+    orderTab === 'watching'
+      ? o.status === 'watching' || o.status === 'paused'
+      : o.status === orderTab,
+  )
+  const cards = shown.length
+    ? shown
+        .map((o) => {
+          const detail =
+            o.status === 'triggered'
+              ? `成交 @ ${o.triggeredPrice?.toFixed(3) ?? '—'} · ${o.triggeredAt?.slice(5, 16) ?? ''}`
+              : o.status === 'failed'
+                ? o.reason ?? '条件不满足'
+                : ''
+          const ops = `<div class="order-ops">
+            <button data-action="orderMove" data-id="${o.id}" data-dir="-1">上移</button>
+            <button data-action="orderMove" data-id="${o.id}" data-dir="1">下移</button>
+            ${o.status === 'paused'
+              ? `<button data-action="orderResume" data-id="${o.id}">恢复</button>`
+              : o.status === 'watching'
+                ? `<button data-action="orderPause" data-id="${o.id}">暂停</button>`
+                : ''}
+            <button data-action="orderEdit" data-id="${o.id}">编辑</button>
+            <button data-action="orderDelete" data-id="${o.id}">删除</button>
+          </div>`
+          return `<div class="order-card">
+            <p class="order-desc">${orderText(o)}</p>
+            <p class="order-status ${o.status}">${statusText(o)}${detail ? ` · ${detail}` : ''}</p>
+            ${ops}
+          </div>`
+        })
+        .join('')
+    : `<p class="empty">${orderTab === 'watching' ? '还没有监控中的条件单' : '暂无记录'}</p>`
+
+  app.innerHTML = `${subbar('条件单', '<button data-action="orderNew" class="subbar-add">＋</button>')}
+    <main class="page">
+      <div class="order-tabs">${tabHtml}</div>
+      <div class="order-list">${cards}</div>
+      <div class="btn-row order-actions">
+        <button class="btn ghost" data-action="train">退出</button>
+        <button class="btn primary" data-action="orderNew">新建条件单</button>
+      </div>
+      <section class="panel order-help">
+        <h3>说明</h3>
+        <p>1. 发生换股或手动暂停时，条件单会进入暂停状态，需要手动恢复或编辑后才会继续生效；恢复前请确认触发价是否仍适用于新的一局。</p>
+        <p>2. 条件单按列表从上往下顺序执行，上面的单执行完后可能导致后面的无法执行（资金不足、持仓不足、T+1、涨跌停），因此尽量避免多个条件单同时触发。</p>
+        <p>3. 每次推进按 5 分钟 K 线的最高／最低价判定触发，按触发价成交，佣金、印花、过户费照常扣除；日线窗口一次跨多根也会逐根判定。</p>
+      </section>
+    </main>`
+}
+
+function defaultDraft(e: ReplayEngine): OrderDraft {
+  const price = round2(e.currentPrice)
+  return {
+    editingId: null,
+    trigger: 'lte',
+    price,
+    side: 'buy',
+    shares: 100,
+    unit: 'shares',
+    amount: round2(100 * price),
+  }
+}
+
+function syncDraftFromInputs(): void {
+  if (!draft) return
+  const priceEl = document.querySelector<HTMLInputElement>('#order-price')
+  const qtyEl = document.querySelector<HTMLInputElement>('#order-qty')
+  const price = Number(priceEl?.value)
+  const qty = Number(qtyEl?.value)
+  if (Number.isFinite(price) && price > 0) {
+    draft.price = round2(price)
+    if (draft.unit === 'shares') draft.amount = round2(draft.shares * draft.price)
+  }
+  if (Number.isFinite(qty) && qty > 0) {
+    if (draft.unit === 'shares') {
+      draft.shares = Math.max(100, Math.floor(qty / 100) * 100)
+      draft.amount = round2(draft.shares * draft.price)
+    } else {
+      draft.amount = round2(qty)
+      draft.shares = Math.max(100, Math.floor(draft.amount / draft.price / 100) * 100)
+    }
+  }
+}
+
+function orderFormBody(e: ReplayEngine): string {
+  const d = draft
+  if (!d) return ''
+  const chg = e.dayChangePct
+  const qtyValue = d.unit === 'shares' ? d.shares : d.amount
+  const qtyStep = d.unit === 'shares' ? 100 : 1000
+  const qtyLabel = d.unit === 'shares' ? '委托股数' : '委托金额（元）'
+  const qtySuffix = d.unit === 'shares' ? '股' : '元'
+  return `<div class="order-quote">
+      <div class="order-quote-top">当前价：<b class="${chg >= 0 ? 'up' : 'down'}">${e.currentPrice.toFixed(2)}</b>
+        <span class="${chg >= 0 ? 'up' : 'down'}">涨跌幅：${pct(chg)}</span></div>
+      <div class="order-quote-grid">
+        <div><span>市值</span><b>${money(e.marketValue)}</b></div>
+        <div><span>持仓 / 可用</span><b>${e.shareCount} / ${e.availableShares}</b></div>
+        <div><span>成本 / 现价</span><b>${e.costPrice ? e.costPrice.toFixed(2) : '—'} / ${e.currentPrice.toFixed(2)}</b></div>
+        <div><span>可用资金</span><b>${money(e.cashValue)}</b></div>
+      </div>
+    </div>
+    <div class="order-section-title">监控条件 <span>股价条件 ▾</span></div>
+    <div class="order-line">
+      <label>股价达到</label>
+      <div class="stepper">
+        <button data-action="orderStep" data-field="price" data-delta="-0.01">－</button>
+        <input id="order-price" type="number" inputmode="decimal" step="0.01" min="0.01" value="${d.price.toFixed(2)}" />
+        <button data-action="orderStep" data-field="price" data-delta="0.01">＋</button>
+      </div>
+      <span class="unit-label">元</span>
+    </div>
+    <div class="trigger-toggle">
+      <button data-action="orderTrigger" data-value="gte" class="${d.trigger === 'gte' ? 'on' : ''}">≥ 涨到就${d.side === 'buy' ? '买' : '卖'}</button>
+      <button data-action="orderTrigger" data-value="lte" class="${d.trigger === 'lte' ? 'on' : ''}">≤ 跌到就${d.side === 'buy' ? '买' : '卖'}</button>
+    </div>
+    <div class="order-line">
+      <label>委托方向</label>
+      <div class="seg-radio">
+        <button data-action="orderSide" data-value="buy" class="${d.side === 'buy' ? 'on' : ''}">买入</button>
+        <button data-action="orderSide" data-value="sell" class="${d.side === 'sell' ? 'on' : ''}">卖出</button>
+      </div>
+    </div>
+    <div class="order-line">
+      <label>${qtyLabel}</label>
+      <div class="stepper">
+        <button data-action="orderStep" data-field="qty" data-delta="-${qtyStep}">－</button>
+        <input id="order-qty" type="number" inputmode="decimal" step="${qtyStep}" min="1" value="${qtyValue}" />
+        <button data-action="orderStep" data-field="qty" data-delta="${qtyStep}">＋</button>
+      </div>
+      <span class="unit-label">${qtySuffix}</span>
+      <button class="unit-switch" data-action="orderUnit">↺${d.unit === 'shares' ? '金额' : '股数'}</button>
+    </div>
+    <div class="ratio-row">
+      <button data-action="orderRatio" data-value="1">全仓</button>
+      <button data-action="orderRatio" data-value="0.1">1/10仓</button>
+      <button data-action="orderRatio" data-value="0.2">1/5仓</button>
+      <button data-action="orderRatio" data-value="0.5">1/2仓</button>
+      <button data-action="orderRatio" data-value="0.3333">1/3仓</button>
+    </div>`
+}
+
+function renderOrderEdit(): void {
+  const e = engine
+  if (!e) {
+    view = 'train'
+    renderTrain()
+    return
+  }
+  if (!draft) draft = defaultDraft(e)
+  app.innerHTML = `${subbar(draft.editingId ? '编辑条件单' : '条件单', '<button data-action="orderSubmit" class="subbar-save">✓</button>')}
+    <main class="page">
+      <div id="order-form-body">${orderFormBody(e)}</div>
+      <div class="btn-row order-actions">
+        <button class="btn ghost" data-action="orderCancel">取消</button>
+        <button class="btn primary" data-action="orderSubmit">提交</button>
+      </div>
+      <p class="tip order-tip">条件单只是挂单，不会立即成交。推进 K 线时按当根 5 分钟 K 的最高／最低价判定，触发后按触发价成交；成交仍受整手、涨跌停、T+1、可用资金与持仓约束，手续费照常计入。</p>
+    </main>`
+}
+
+function refreshOrderForm(): void {
+  if (!engine) return
+  const el = document.querySelector<HTMLElement>('#order-form-body')
+  if (el) el.innerHTML = orderFormBody(engine)
+}
+
+function mutateOrders(fn: (list: ConditionalOrder[]) => void): void {
+  if (!engine) return
+  const list = engine.orderList
+  fn(list)
+  engine.setOrders(list)
+  render()
+}
+
+function submitOrder(): void {
+  if (!engine || !draft) return
+  syncDraftFromInputs()
+  const d = draft
+  const shares = Math.max(0, Math.floor(d.shares / 100) * 100)
+  if (!(d.price > 0) || shares < 100) {
+    toast('请填写有效触发价，委托股数至少 100 股')
+    return
+  }
+  const list = engine.orderList
+  if (d.editingId) {
+    const i = list.findIndex((o) => o.id === d.editingId)
+    if (i < 0) return
+    list[i] = {
+      ...list[i],
+      trigger: d.trigger,
+      price: d.price,
+      side: d.side,
+      shares,
+      status: 'watching',
+      reason: undefined,
+      triggeredIndex: undefined,
+      triggeredAt: undefined,
+      triggeredPrice: undefined,
+      code: engine.code,
+    }
+  } else {
+    list.push({
+      id: newOrderId(),
+      trigger: d.trigger,
+      price: d.price,
+      side: d.side,
+      shares,
+      status: 'watching',
+      code: engine.code,
+      createdAt: Date.now(),
+    })
+  }
+  engine.setOrders(list)
+  draft = null
+  orderTab = 'watching'
+  view = 'orders'
+  toast(d.editingId ? '条件单已更新，监控中' : '条件单已创建，监控中')
+  render()
+}
+
+// ---- 记录页 ---------------------------------------------------------
 
 function feePanel(): string {
   const s = loadFeeSchedule()
@@ -383,7 +655,7 @@ function renderRecords(): void {
             <div class="record-mid">${r.startDate.slice(0, 10)} ~ ${r.endDate.slice(0, 10)}</div>
             <div class="record-right">
               <b class="${r.score.pnlPct >= 0 ? 'up' : 'down'}">${pct(r.score.pnlPct)}</b>
-              <span>评分 ${r.score.total}${r.feeTotal ? ` · 费 ${yuan2(r.feeTotal.total)}` : ''}</span>
+              <span>评分 ${r.score.total}${r.feeTotal ? ` · 费 ${yuan2(r.feeTotal.total)}` : ''}${r.orders?.length ? ` · 条件单 ${r.orders.length}` : ''}</span>
             </div>
           </div>`,
         )
@@ -426,6 +698,8 @@ function renderShell(): void {
   }
   if (view === 'train') renderTrain()
   else if (view === 'review') renderReview()
+  else if (view === 'orders') renderOrders()
+  else if (view === 'orderEdit') renderOrderEdit()
   else renderRecords()
   window.scrollTo(0, 0)
 }
@@ -435,11 +709,29 @@ function render(): void {
 }
 
 function startGame(): void {
-  if (!currentPackage || !currentMeta) return
+  if (!sessions) return
   stopAutoPlay()
-  const cfg = configForPeriod(currentMeta, loadFeeSchedule())
-  engine = ReplayEngine.create(pickSegment(currentPackage), cfg)
+  const game = pickGame(sessions)
+  const symbol = sessions.symbols[game.c]
+  if (!symbol) return
+  const meta = windowMeta(sessions, engine?.currentView ?? 'day')
+  const cfg = configForWindow(meta, loadFeeSchedule())
+  // 条件单是账户级的：换股后仍在列表里，但监控中的自动暂停
+  const carried = engine ? pauseOnSwitch(engine.orderList, game.c) : []
+  engine = ReplayEngine.create(symbol, game, cfg)
+  engine.setOrders(carried)
   result = null
+  draft = null
+}
+
+function switchWindow(key: PeriodKey): void {
+  if (!sessions || !engine || key === engine.currentView) return
+  const meta = sessions.windows.find((w) => w.key === key)
+  if (!meta) return
+  engine.setView(key, meta.label)
+  view = 'train'
+  render()
+  toast(`已切到${meta.label}：同一只股票、同一时间，账户与条件单不变`)
 }
 
 function stopAutoPlay(): void {
@@ -448,6 +740,55 @@ function stopAutoPlay(): void {
   autoTimer = 0
   const btn = document.getElementById('auto-btn')
   if (btn) btn.textContent = '自动播放 ▶'
+}
+
+function notifyOrders(before: ConditionalOrder[], after: ConditionalOrder[]): void {
+  for (const o of after) {
+    const prev = before.find((x) => x.id === o.id)
+    if (!prev || prev.status !== 'watching' || o.status === 'watching') continue
+    if (o.status === 'triggered') {
+      toast(`条件单触发：${o.side === 'buy' ? '买入' : '卖出'} ${o.shares} 股 @ ${o.triggeredPrice?.toFixed(2) ?? '—'}`)
+    } else if (o.status === 'failed') {
+      toast(`条件单失败：${o.reason ?? '条件不满足'}`)
+    }
+    return
+  }
+}
+
+function updateTrainUI(): void {
+  if (!engine || view !== 'train') return
+  const candles = engine.visible()
+  if (engine.currentView === 'm5' && candles.length) {
+    chartView?.appendBar(candles[candles.length - 1])
+  } else {
+    chartView?.setBars(candles, true)
+  }
+  const legend = document.getElementById('indicator-legend')
+  if (legend) legend.innerHTML = indicatorLegend(candles)
+  const quote = document.getElementById('quote-wrap')
+  if (quote) quote.innerHTML = quoteBar(candles, engine.previousClose, engine.dayChangePct)
+  const set = (id: string, text: string, cls?: string): void => {
+    const el = document.getElementById(id)
+    if (!el) return
+    el.textContent = text
+    if (cls) el.className = cls
+  }
+  set('s-cash', money(engine.cashValue))
+  set('s-shares', `${engine.shareCount} 股`)
+  set('s-profit', pct(engine.profitPct), engine.profit >= 0 ? 'up' : 'down')
+  set('s-progress', `${engine.index + 1} / ${engine.total}`)
+  set('s-fees', yuan2(engine.totalFees.total))
+  const list = document.getElementById('trade-list')
+  if (list) list.innerHTML = renderTrades(engine.tradeList)
+}
+
+function advanceStep(): void {
+  if (!engine) return
+  const before = engine.orderList
+  const hasMore = engine.advance()
+  updateTrainUI()
+  notifyOrders(before, engine.orderList)
+  if (!hasMore) toast('已到最后一根，点「结束并复盘」看结果')
 }
 
 function toggleAutoPlay(): void {
@@ -463,38 +804,9 @@ function toggleAutoPlay(): void {
       stopAutoPlay()
       return
     }
-    const before = engine.visible().length
-    const hasMore = engine.advance()
-    const after = engine.visible()
-    updateTrainUI(after.length > before ? after[after.length - 1] : undefined)
-    if (!hasMore) {
-      stopAutoPlay()
-      toast('已到最后一根，点「结束并复盘」看结果')
-    }
+    advanceStep()
+    if (engine.isEnded) stopAutoPlay()
   }, 650)
-}
-
-function updateTrainUI(newBar?: Candle): void {
-  if (!engine) return
-  if (newBar) chartView?.appendBar(newBar)
-  const candles = engine.visible()
-  const legend = document.getElementById('indicator-legend')
-  if (legend) legend.innerHTML = indicatorLegend(candles)
-  const quote = document.getElementById('quote-wrap')
-  if (quote) quote.innerHTML = quoteBar(candles)
-  const set = (id: string, text: string, cls?: string): void => {
-    const el = document.getElementById(id)
-    if (!el) return
-    el.textContent = text
-    if (cls) el.className = cls
-  }
-  set('s-cash', money(engine.cashValue))
-  set('s-shares', `${engine.shareCount} 股`)
-  set('s-profit', pct(engine.profitPct), engine.profit >= 0 ? 'up' : 'down')
-  set('s-progress', `${engine.index + 1} / ${engine.total}`)
-  set('s-fees', yuan2(engine.totalFees.total))
-  const list = document.getElementById('trade-list')
-  if (list) list.innerHTML = renderTrades(engine.tradeList)
 }
 
 function applyTrade(res: { ok: boolean; reason?: string } | undefined): void {
@@ -549,32 +861,9 @@ function readFeeForm(): FeeSchedule {
   }
 }
 
-async function switchPeriod(key: PeriodKey): Promise<void> {
-  if (!manifest || key === currentMeta?.key) return
-  const meta = manifest.periods.find((p) => p.key === key)
-  if (!meta) return
-  if (!meta.file) {
-    toast(`${meta.label} 数据待补：运行取数脚本后重新生成片段包即可启用`)
-    return
-  }
-  loading = true
-  loadingLabel = `${meta.label}训练`
-  render()
-  try {
-    const pkg = await loadPackage(meta)
-    currentMeta = meta
-    currentPackage = pkg
-    startGame()
-    view = 'train'
-  } catch (err) {
-    toast(`加载失败：${errText(err)}`)
-  } finally {
-    loading = false
-    render()
-  }
-}
-
-async function handle(action: string): Promise<void> {
+async function handle(action: string, target: HTMLElement): Promise<void> {
+  const id = target.dataset.id
+  const value = target.dataset.value ?? ''
   switch (action) {
     case 'train':
       if (view !== 'train') {
@@ -592,20 +881,18 @@ async function handle(action: string): Promise<void> {
       render()
       await boot()
       return
-    case 'new':
+    case 'new': {
       startGame()
       view = 'train'
       render()
-      return
-    case 'next': {
-      if (!engine) return
-      const before = engine.visible().length
-      const hasMore = engine.advance()
-      const after = engine.visible()
-      updateTrainUI(after.length > before ? after[after.length - 1] : undefined)
-      if (!hasMore) toast('已到最后一根，点「结束并复盘」看结果')
+      if (engine?.orderList.some((o) => o.status === 'paused')) {
+        toast('上一局监控中的条件单已暂停，可在条件单里恢复或编辑')
+      }
       return
     }
+    case 'next':
+      advanceStep()
+      return
     case 'auto':
       toggleAutoPlay()
       return
@@ -654,6 +941,135 @@ async function handle(action: string): Promise<void> {
       render()
       return
     }
+    // ---- 条件单 ----
+    case 'orders':
+      orderTab = 'watching'
+      view = 'orders'
+      render()
+      return
+    case 'orderTab':
+      orderTab = value as OrderTab
+      render()
+      return
+    case 'orderNew':
+      if (!engine) return
+      draft = defaultDraft(engine)
+      view = 'orderEdit'
+      render()
+      return
+    case 'orderCancel':
+      draft = null
+      view = 'orders'
+      render()
+      return
+    case 'orderStep': {
+      if (!draft) return
+      syncDraftFromInputs()
+      const delta = Number(target.dataset.delta)
+      if (target.dataset.field === 'price') {
+        draft.price = Math.max(0.01, round2(draft.price + delta))
+        draft.amount = round2(draft.shares * draft.price)
+      } else if (draft.unit === 'shares') {
+        draft.shares = Math.max(100, Math.floor((draft.shares + delta) / 100) * 100)
+        draft.amount = round2(draft.shares * draft.price)
+      } else {
+        draft.amount = Math.max(100, round2(draft.amount + delta))
+        draft.shares = Math.max(100, Math.floor(draft.amount / draft.price / 100) * 100)
+      }
+      refreshOrderForm()
+      return
+    }
+    case 'orderTrigger':
+      if (!draft) return
+      syncDraftFromInputs()
+      draft.trigger = value === 'gte' ? 'gte' : 'lte'
+      refreshOrderForm()
+      return
+    case 'orderSide': {
+      if (!draft) return
+      syncDraftFromInputs()
+      draft.side = value === 'sell' ? 'sell' : 'buy'
+      // 买入默认回踩买、卖出默认冲高卖，用户仍可手动改触发方向
+      draft.trigger = draft.side === 'buy' ? 'lte' : 'gte'
+      refreshOrderForm()
+      return
+    }
+    case 'orderUnit':
+      if (!draft) return
+      syncDraftFromInputs()
+      draft.unit = draft.unit === 'shares' ? 'amount' : 'shares'
+      refreshOrderForm()
+      return
+    case 'orderRatio': {
+      if (!draft || !engine) return
+      syncDraftFromInputs()
+      const ratio = Number(value) || 1
+      const max = draft.side === 'buy' ? engine.maxBuyable() : engine.availableShares
+      draft.shares = Math.max(100, Math.floor((max * ratio) / 100) * 100)
+      draft.amount = round2(draft.shares * draft.price)
+      draft.unit = 'shares'
+      refreshOrderForm()
+      return
+    }
+    case 'orderSubmit':
+      submitOrder()
+      return
+    case 'orderEdit': {
+      const o = engine?.orderList.find((x) => x.id === id)
+      if (!o) return
+      draft = {
+        editingId: o.id,
+        trigger: o.trigger,
+        price: o.price,
+        side: o.side,
+        shares: o.shares,
+        unit: 'shares',
+        amount: round2(o.shares * o.price),
+      }
+      view = 'orderEdit'
+      render()
+      return
+    }
+    case 'orderDelete':
+      mutateOrders((list) => {
+        const i = list.findIndex((o) => o.id === id)
+        if (i >= 0) list.splice(i, 1)
+      })
+      return
+    case 'orderMove': {
+      const dir = Number(target.dataset.dir)
+      mutateOrders((list) => {
+        const i = list.findIndex((o) => o.id === id)
+        const j = i + dir
+        if (i >= 0 && j >= 0 && j < list.length) {
+          const tmp = list[i]
+          list[i] = list[j]
+          list[j] = tmp
+        }
+      })
+      return
+    }
+    case 'orderResume':
+      mutateOrders((list) => {
+        const o = list.find((x) => x.id === id)
+        if (o && o.status === 'paused') {
+          o.status = 'watching'
+          o.reason = undefined
+          if (engine) o.code = engine.code
+        }
+      })
+      toast('已恢复监控；请确认触发价仍适用于当前这一局')
+      return
+    case 'orderPause':
+      mutateOrders((list) => {
+        const o = list.find((x) => x.id === id)
+        if (o && o.status === 'watching') {
+          o.status = 'paused'
+          o.reason = '手动'
+        }
+      })
+      return
+    // ---- 设置 / 备份 ----
     case 'feeSave': {
       try {
         saveFeeSchedule(readFeeForm())
@@ -738,16 +1154,24 @@ async function handle(action: string): Promise<void> {
 }
 
 app.addEventListener('click', (event) => {
-  const target = (event.target as HTMLElement).closest<HTMLElement>('[data-action],[data-period]')
+  const target = (event.target as HTMLElement).closest<HTMLElement>(
+    '[data-action],[data-window]',
+  )
   if (!target) return
-  if (target.dataset.period) void switchPeriod(target.dataset.period as PeriodKey)
-  else if (target.dataset.action) void handle(target.dataset.action)
+  if (target.dataset.window) void switchWindow(target.dataset.window as PeriodKey)
+  else if (target.dataset.action) void handle(target.dataset.action, target)
 })
 
 // 设置项用 form 包着输入框（消除浏览器告警），但绝不允许回车提交刷新页面
 document.addEventListener('submit', (event) => {
   const id = (event.target as HTMLElement).id
   if (id === 'sync-form' || id === 'fee-form') event.preventDefault()
+})
+
+// 条件单表单：输入时不重渲染，避免光标跳动；只在点 ± / 切换时局部刷新
+document.addEventListener('input', (event) => {
+  const input = event.target as HTMLInputElement
+  if (input.id === 'order-price' || input.id === 'order-qty') syncDraftFromInputs()
 })
 
 document.addEventListener('change', (event) => {
@@ -772,13 +1196,10 @@ async function boot(): Promise<void> {
   render()
   try {
     manifest = await loadManifest()
-    const first =
-      manifest.periods.find((p) => p.key === 'day' && p.file) ??
-      manifest.periods.find((p) => p.file)
-    if (!first) throw new Error('没有可用的训练片段包')
-    loadingLabel = `${first.label}训练`
-    currentMeta = first
-    currentPackage = await loadPackage(first)
+    sessions = await loadSessions(manifest)
+    if (!sessions.games.length || !sessions.windows.length) {
+      throw new Error('对局包不完整')
+    }
     startGame()
     loading = false
     render()

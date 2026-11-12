@@ -1,26 +1,36 @@
-/** 离线训练片段包：每个周期一个 JSON，运行时按需 fetch，不进 JS 主包。 */
+/** 离线对局包：一局同时携带日线与 5 分钟线，切换时间窗口只是换视图。 */
 
-export type PeriodKey = 'm5' | 'm30' | 'm60' | 'day' | 'week' | 'month'
+export type PeriodKey = 'm5' | 'day'
 
 /** Bar = [时间标签, 开, 高, 低, 收, 量]；训练时标签不对外展示。 */
 export type Bar = [string, number, number, number, number, number]
 
-export interface Segment {
-  c: string
-  s: string
-  e: string
-  b: Bar[]
-}
-
-export interface PeriodMeta {
+export interface WindowMeta {
   key: PeriodKey
   label: string
-  file: string | null
   visible: number
-  max: number
-  segments: number
-  bytes: number
+  advance: number
   note: string
+}
+
+/** 同一只标的的两套 K 线，已按交易日收盘价做过复权口径对齐。 */
+export interface SymbolData {
+  day: Bar[]
+  m5: Bar[]
+}
+
+/** 一局 = 某只标的 + 5 分钟序列上的起止游标。 */
+export interface Game {
+  c: string
+  s: number
+  e: number
+}
+
+export interface SessionPackage {
+  version: number
+  windows: WindowMeta[]
+  symbols: Record<string, SymbolData>
+  games: Game[]
 }
 
 export interface DataManifest {
@@ -28,20 +38,16 @@ export interface DataManifest {
   generatedAt: string
   source: string
   adjust: string
-  periods: PeriodMeta[]
-}
-
-export interface SegmentPackage {
-  period: PeriodKey
-  label: string
-  visible: number
-  max: number
-  segments: Segment[]
+  dataFile: string
+  bytes: number
+  symbols: number
+  games: number
+  windows: WindowMeta[]
 }
 
 const BASE = import.meta.env.BASE_URL
 let manifestPromise: Promise<DataManifest> | null = null
-const packagePromises = new Map<string, Promise<SegmentPackage>>()
+let sessionsPromise: Promise<SessionPackage> | null = null
 
 async function getJSON<T>(url: string, cache: RequestCache): Promise<T> {
   const res = await fetch(url, { cache })
@@ -62,24 +68,27 @@ export function loadManifest(): Promise<DataManifest> {
   return manifestPromise
 }
 
-/** 片段包文件名带内容 hash，交给 Service Worker 长期缓存即可。 */
-export function loadPackage(meta: PeriodMeta): Promise<SegmentPackage> {
-  if (!meta.file) throw new Error(`${meta.label} 暂无数据`)
-  let pending = packagePromises.get(meta.key)
-  if (!pending) {
-    pending = getJSON<SegmentPackage>(`${BASE}data/${meta.file}`, 'force-cache').catch(
-      (err) => {
-        packagePromises.delete(meta.key)
-        throw err
-      },
-    )
-    packagePromises.set(meta.key, pending)
+/** 对局包文件名带内容 hash，交给 Service Worker 长期缓存即可。 */
+export function loadSessions(manifest: DataManifest): Promise<SessionPackage> {
+  if (!sessionsPromise) {
+    sessionsPromise = getJSON<SessionPackage>(
+      `${BASE}data/${manifest.dataFile}`,
+      'force-cache',
+    ).catch((err) => {
+      sessionsPromise = null
+      throw err
+    })
   }
-  return pending
+  return sessionsPromise
 }
 
-export function pickSegment(pkg: SegmentPackage): Segment {
-  const list = pkg.segments
-  if (!list.length) throw new Error('片段包为空')
-  return list[Math.floor(Math.random() * list.length)]
+export function pickGame(pkg: SessionPackage): Game {
+  if (!pkg.games.length) throw new Error('对局包为空')
+  return pkg.games[Math.floor(Math.random() * pkg.games.length)]
+}
+
+export function windowMeta(pkg: SessionPackage, key: PeriodKey): WindowMeta {
+  const meta = pkg.windows.find((w) => w.key === key)
+  if (!meta) throw new Error(`未知时间窗口：${key}`)
+  return meta
 }

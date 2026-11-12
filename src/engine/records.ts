@@ -1,5 +1,6 @@
 import type { PeriodKey } from '../data/segments'
 import type { FeeBreakdown, InstrumentKind, InstrumentRule } from './fees'
+import type { ConditionalOrder } from './orders'
 import type { SessionResult } from './replay'
 
 export const STORAGE_KEY = 'kline-replay.records.v1'
@@ -23,6 +24,8 @@ export interface StoredRecord {
   instrumentKind?: InstrumentKind
   feeRule?: InstrumentRule
   feeTotal?: FeeBreakdown
+  /** 本局条件单快照，旧记录没有此字段 */
+  orders?: ConditionalOrder[]
 }
 
 export function toStored(r: SessionResult): StoredRecord {
@@ -42,6 +45,7 @@ export function toStored(r: SessionResult): StoredRecord {
     instrumentKind: r.instrumentKind,
     feeRule: r.feeRule,
     feeTotal: r.feeTotal,
+    orders: r.orders,
   }
 }
 
