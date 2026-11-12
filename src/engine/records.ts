@@ -78,8 +78,12 @@ export async function exportRecords(): Promise<'shared' | 'downloaded'> {
     share?: (data: { files: File[]; title?: string }) => Promise<void>
   }
   if (nav.canShare?.({ files: [file] }) && nav.share) {
-    await nav.share({ files: [file], title: 'K线回放训练记录' })
-    return 'shared'
+    try {
+      await nav.share({ files: [file], title: 'K线回放训练记录' })
+      return 'shared'
+    } catch {
+      // 分享面板不可用或用户取消时，降级成直接下载，保证备份一定能拿到
+    }
   }
   const url = URL.createObjectURL(blob)
   const link = document.createElement('a')
