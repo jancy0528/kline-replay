@@ -1,5 +1,5 @@
-import { dispose, init, type Chart, type KLineData } from 'klinecharts'
-import type { Candle } from '../engine/replay'
+import { dispose, init, registerOverlay, type Chart, type KLineData } from 'klinecharts'
+import type { Candle, TradeMarker } from '../engine/replay'
 
 const BASE_TS = Date.UTC(2020, 0, 1)
 const DAY_MS = 86_400_000
@@ -104,16 +104,89 @@ function toKLine(candle: Candle): KLineData {
   }
 }
 
+// ---- 买卖点 B / S ---------------------------------------------------
+// 用库自带的 overlay 机制而不是另盖一层 DOM：point 绑定 K 线时间戳与价格，
+// 缩放 / 左右平移 / y 轴自适应时由库自己重算坐标，标记不会跟 K 线脱节。
+const MARKER_NAME = 'klineTradeBS'
+const MARKER_GROUP = 'kline-trade-markers'
+interface MarkerData {
+  side: 'buy' | 'sell'
+  stack: number
+  count: number
+}
+let markerRegistered = false
+
+function ensureMarkerOverlay(): void {
+  if (markerRegistered) return
+  markerRegistered = true
+  registerOverlay<MarkerData>({
+    name: MARKER_NAME,
+    totalStep: 1,
+    lock: true,
+    visible: true,
+    zLevel: 20,
+    needDefaultPointFigure: false,
+    needDefaultXAxisFigure: false,
+    needDefaultYAxisFigure: false,
+    createPointFigures: ({ overlay, coordinates, bounding }) => {
+      const p = coordinates[0]
+      if (!p || !Number.isFinite(p.x) || !Number.isFinite(p.y)) return []
+      const data = overlay.extendData
+      const buy = data?.side !== 'sell'
+      const size = 14
+      const spread = (data?.stack ?? 0) - ((data?.count ?? 1) - 1) / 2
+      const cx = p.x + spread * 16
+      // 参考图：B 在 K 线上方、S 在 K 线下方，各带一个指向 K 线的小尖角。
+      const rawY = buy ? p.y - 26 : p.y + 10
+      const y = Math.max(3, Math.min(bounding.height - size - 4, rawY))
+      const color = buy ? UP : DOWN
+      const tip = buy
+        ? [
+            { x: cx - 3, y: y + size },
+            { x: cx + 3, y: y + size },
+            { x: cx, y: y + size + 4 },
+          ]
+        : [
+            { x: cx - 3, y: y },
+            { x: cx + 3, y: y },
+            { x: cx, y: y - 4 },
+          ]
+      return [
+        {
+          type: 'rect',
+          attrs: { x: cx - size / 2, y, width: size, height: size },
+          styles: { style: 'fill', color, borderRadius: 3 },
+          ignoreEvent: true,
+        },
+        {
+          type: 'polygon',
+          attrs: { coordinates: tip },
+          styles: { style: 'fill', color },
+          ignoreEvent: true,
+        },
+        {
+          type: 'text',
+          attrs: { x: cx, y: y + size / 2, text: buy ? 'B' : 'S', align: 'center', baseline: 'middle' },
+          styles: { color: '#ffffff', size: 10, weight: 'bold', backgroundColor: 'transparent' },
+          ignoreEvent: true,
+        },
+      ]
+    },
+  })
+}
+
 /** 图表封装：训练时逐根追加，复盘时一次给全量；x 轴日期始终隐藏。 */
 export class ChartView {
   private chart: Chart | null = null
   private bars: KLineData[] = []
   private pushBar: ((bar: KLineData) => void) | null = null
+  private markers: TradeMarker[] = []
 
   constructor(private readonly container: HTMLElement) {}
 
   mount(): void {
     if (this.chart) return
+    ensureMarkerOverlay()
     const chart = init(this.container, {
       locale: 'zh-CN',
       styles: 'dark',
@@ -156,7 +229,7 @@ export class ChartView {
    */
   setBars(candles: Candle[], keepDrawings = false): void {
     const saved = keepDrawings && this.chart
-      ? this.chart.getOverlays().map((o) => ({ ...o }))
+      ? this.chart.getOverlays().filter((o) => o.groupId !== MARKER_GROUP).map((o) => ({ ...o }))
       : []
     this.bars = candles.map(toKLine)
     this.chart?.resetData()
@@ -171,6 +244,39 @@ export class ChartView {
     // 否则上一局点过「最早」(barSpace=1) 会继承下来，把 2800 根压成一屏。
     // keepDrawings=true 是同一局内推进造成的当日 K 重合成，视口要保持不变。
     if (!keepDrawings) this.resetViewport()
+    this.applyMarkers()
+  }
+
+  /** 重画买卖点。每次成交、推进、切窗口后调用；只增删本组的 overlay。 */
+  setMarkers(markers: TradeMarker[]): void {
+    this.markers = markers
+    this.applyMarkers()
+  }
+
+  private applyMarkers(): void {
+    if (!this.chart) return
+    this.chart.removeOverlay({ groupId: MARKER_GROUP })
+    if (!this.markers.length) return
+    ensureMarkerOverlay()
+    for (const m of this.markers) {
+      this.chart.createOverlay({
+        name: MARKER_NAME,
+        groupId: MARKER_GROUP,
+        paneId: 'candle_pane',
+        lock: true,
+        visible: true,
+        zLevel: 20,
+        needDefaultPointFigure: false,
+        needDefaultXAxisFigure: false,
+        needDefaultYAxisFigure: false,
+        points: [{
+          timestamp: BASE_TS + m.index * DAY_MS,
+          dataIndex: m.index,
+          value: m.value,
+        }],
+        extendData: { side: m.side, stack: m.stack, count: m.count },
+      })
+    }
   }
 
   private resetViewport(): void {
@@ -235,8 +341,12 @@ export class ChartView {
     this.chart?.createOverlay(name)
   }
 
+  /** 只清用户画的线，买卖点是行情的一部分，不能被「清除画线」一起删掉。 */
   clearDrawings(): void {
-    this.chart?.removeOverlay()
+    if (!this.chart) return
+    for (const o of this.chart.getOverlays().slice()) {
+      if (o.groupId !== MARKER_GROUP) this.chart.removeOverlay({ id: o.id })
+    }
   }
 
   resize(): void {
@@ -249,5 +359,6 @@ export class ChartView {
     this.chart = null
     this.pushBar = null
     this.bars = []
+    this.markers = []
   }
 }

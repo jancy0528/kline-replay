@@ -304,7 +304,7 @@ h1 {
   font-variant-numeric: tabular-nums;
 }
 
-/* 训练页账户条：压成一行三格，把纵向空间让给 K 线与操作条 */
+/* 训练页旧账户条（保留给可能的旧布局，当前训练页改用下方持仓面板） */
 .stats.compact {
   grid-template-columns: repeat(3, minmax(0, 1fr));
   margin-top: 8px;
@@ -313,6 +313,53 @@ h1 {
 .stats.compact div { padding: 7px 9px; gap: 2px; }
 .stats.compact span { font-size: 10px; }
 .stats.compact b { font-size: 13px; }
+
+/* 操作条下方的持仓面板：两组「标签行 + 数值行」四列，对齐同花顺训练页 */
+.position-panel {
+  margin-top: 6px;
+  overflow: hidden;
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  background: var(--panel);
+}
+.position-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  align-items: center;
+  gap: 3px 4px;
+  padding: 5px 8px 6px;
+}
+.position-grid + .position-grid { border-top: 1px solid var(--line); }
+.position-grid .pos-label {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  min-width: 0;
+  color: var(--muted);
+  font-size: 10px;
+  white-space: nowrap;
+}
+.position-grid .pos-label .link { flex: 0 0 auto; padding: 0; font-size: 9.5px; }
+.position-grid b {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--text);
+  font-size: 11.5px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.position-grid .pos-badge {
+  padding: 0 3px;
+  border: 1px solid var(--line);
+  border-radius: 3px;
+  color: var(--accent);
+  font-size: 8.5px;
+  font-style: normal;
+  line-height: 12px;
+}
+.blind-note b.up, .blind-note b.down { font-weight: 700; }
 
 /* 紧贴成交量副图下方的一行操作条，参考图里就是「换股/条件单/买入/卖出/天数/下一步」 */
 .action-bar {

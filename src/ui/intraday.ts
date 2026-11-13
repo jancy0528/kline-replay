@@ -42,7 +42,14 @@ function fmtAmount(v: number): string {
   return String(Math.round(v))
 }
 
-export function renderIntraday(data: IntradayData | null): string {
+/** 当日分时图上的一笔成交，来自引擎已揭示的交易记录。 */
+export interface IntradayMark {
+  time: string
+  side: 'buy' | 'sell'
+  price: number
+}
+
+export function renderIntraday(data: IntradayData | null, marks: IntradayMark[] = []): string {
   if (!data || !data.points.length) {
     return '<div class="intraday empty">当日分时数据加载中…</div>'
   }
@@ -88,6 +95,37 @@ export function renderIntraday(data: IntradayData | null): string {
   const pctNow = (last.price / prevClose - 1) * 100
   const nowCls = pctNow >= 0 ? 'up' : 'down'
 
+  // 与 K 线图同一套口径：B 红 S 绿、买点在上卖点在下、同一分钟多笔横向错开。
+  const markerLayer = (() => {
+    if (!marks.length) return ''
+    const grouped = new Map<string, IntradayMark[]>()
+    for (const m of marks) {
+      const list = grouped.get(m.time) ?? []
+      list.push(m)
+      grouped.set(m.time, list)
+    }
+    let out = ''
+    for (const [time, list] of grouped) {
+      const p = points.find((pt) => pt.time === time) ?? last
+      list.forEach((m, i) => {
+        const buy = m.side === 'buy'
+        const color = buy ? UP : DOWN
+        const px = x(p.time) + (i - (list.length - 1) / 2) * 16
+        const py = clamp(y(m.price), MAIN_TOP + 2, MAIN_BOTTOM - 2)
+        const by = clamp(buy ? py - 20 : py + 6, 2, MAIN_BOTTOM - 10)
+        const tip = buy
+          ? `${px - 3},${by + 14} ${px + 3},${by + 14} ${px},${by + 18}`
+          : `${px - 3},${by} ${px + 3},${by} ${px},${by - 4}`
+        out += `<g>
+          <rect x="${(px - 7).toFixed(1)}" y="${by.toFixed(1)}" width="14" height="14" rx="3" fill="${color}"/>
+          <polygon points="${tip}" fill="${color}"/>
+          <text x="${px.toFixed(1)}" y="${(by + 10.5).toFixed(1)}" text-anchor="middle" font-size="10" font-weight="700" fill="#ffffff">${buy ? 'B' : 'S'}</text>
+        </g>`
+      })
+    }
+    return out
+  })()
+
   return `<div class="intraday">
     <svg viewBox="0 0 ${W} ${VOL_TOP + VOL_H + 20}" preserveAspectRatio="none" role="img" aria-label="当日分时走势">
       <line x1="${PAD_L}" y1="${MAIN_TOP}" x2="${PAD_L + PLOT_W}" y2="${MAIN_TOP}" stroke="${GRID}" stroke-dasharray="3 4"/>
@@ -97,6 +135,7 @@ export function renderIntraday(data: IntradayData | null): string {
       <polyline points="${priceLine}" fill="none" stroke="${WHITE}" stroke-width="1.5" stroke-linejoin="round"/>
       <polyline points="${avgLine}" fill="none" stroke="${YELLOW}" stroke-width="1.2" stroke-linejoin="round"/>
       <circle cx="${lastX.toFixed(1)}" cy="${lastY.toFixed(1)}" r="2.6" fill="${WHITE}"/>
+      ${markerLayer}
       ${priceLabels}${pctLabels}
       <text x="${PAD_L + 3}" y="${VOL_TOP - 4}" class="id-axis dim">分时量</text>
       <text x="${W - PAD_R + 5}" y="${VOL_TOP - 4}" class="id-axis ${nowCls}">${pctNow >= 0 ? '+' : ''}${pctNow.toFixed(2)}%</text>

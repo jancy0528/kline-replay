@@ -12,11 +12,14 @@ import {
 import {
   ReplayEngine,
   configForWindow,
+  intradayMarks,
+  tradeMarkers,
   type Candle,
   type HistoryPosition,
   type QuoteMetrics,
   type SessionResult,
   type Trade,
+  type TradeMarker,
 } from './engine/replay'
 import {
   clearRecords,
@@ -718,6 +721,58 @@ function feeNote(e: ReplayEngine): string {
     <span class="fee-total">本局费用 <b id="s-fees">${yuan2(e.totalFees.total)}</b></span>`
 }
 
+/** 带符号金额：+¥1,234 / -¥1,234，颜色由调用方按 A 股习惯给。 */
+function signedMoney(n: number): string {
+  return `${n >= 0 ? '+' : '-'}${money(Math.abs(n))}`
+}
+const signCls = (n: number): string => (n >= 0 ? 'up' : 'down')
+
+/**
+ * 操作条下方的持仓面板，对齐参考图的两组四列：
+ * 市值 / 盈亏 / 持仓可用 / 成本现价，总资产 / 可用 / 总盈亏 / 收益率。
+ * 空仓时持仓相关四格显示 --，总资产那组始终有值。
+ */
+function positionPanel(e: ReplayEngine): string {
+  const hold = e.shareCount > 0
+  const floatPnl = hold ? round2((e.currentPrice - e.costPrice) * e.shareCount) : null
+  return `<section class="position-panel" id="position-panel">
+    <div class="position-grid">
+      <span class="pos-label">市值 <button class="link" data-action="tradeList">交易明细</button></span>
+      <span class="pos-label">盈亏</span>
+      <span class="pos-label">持仓/可用</span>
+      <span class="pos-label">成本/现价</span>
+      <b id="s-market-value">${hold ? money(e.marketValue) : '--'}</b>
+      <b id="s-float-pnl" class="${floatPnl === null ? '' : signCls(floatPnl)}">${floatPnl === null ? '--' : signedMoney(floatPnl)}</b>
+      <b id="s-shares">${hold ? `${e.shareCount} / ${e.availableShares}` : '--'}</b>
+      <b id="s-cost-price">${hold ? `${e.costPrice.toFixed(2)} / ${e.currentPrice.toFixed(2)}` : `-- / ${e.currentPrice.toFixed(2)}`}</b>
+    </div>
+    <div class="position-grid">
+      <span class="pos-label">总资产 <i class="pos-badge">模拟仓</i></span>
+      <span class="pos-label">可用</span>
+      <span class="pos-label">总盈亏</span>
+      <span class="pos-label">收益率</span>
+      <b id="s-equity">${money(round2(e.equity))}</b>
+      <b id="s-cash">${money(e.cashValue)}</b>
+      <b id="s-profit" class="${signCls(e.profit)}">${signedMoney(e.profit)}</b>
+      <b id="s-profit-pct" class="${signCls(e.profit)}">${pct(e.profitPct)}</b>
+    </div>
+  </section>`
+}
+
+/** 持仓面板随每次成交 / 推进局部刷新，不重建按钮节点。 */
+function updatePositionPanel(e: ReplayEngine, set: (id: string, text: string, cls?: string) => void): void {
+  const hold = e.shareCount > 0
+  const floatPnl = hold ? round2((e.currentPrice - e.costPrice) * e.shareCount) : null
+  set('s-market-value', hold ? money(e.marketValue) : '--')
+  set('s-float-pnl', floatPnl === null ? '--' : signedMoney(floatPnl), floatPnl === null ? '' : signCls(floatPnl))
+  set('s-shares', hold ? `${e.shareCount} / ${e.availableShares}` : '--')
+  set('s-cost-price', hold ? `${e.costPrice.toFixed(2)} / ${e.currentPrice.toFixed(2)}` : `-- / ${e.currentPrice.toFixed(2)}`)
+  set('s-equity', money(round2(e.equity)))
+  set('s-cash', money(e.cashValue))
+  set('s-profit', signedMoney(e.profit), signCls(e.profit))
+  set('s-profit-pct', pct(e.profitPct), signCls(e.profit))
+}
+
 function renderTrades(trades: Trade[]): string {
   if (trades.length === 0) return '<p class="empty">还没有操作</p>'
   return trades
@@ -746,7 +801,7 @@ function renderTrades(trades: Trade[]): string {
     .join('')
 }
 
-function mountChart(candles: Candle[], intraday: boolean): void {
+function mountChart(candles: Candle[], intraday: boolean, markers: TradeMarker[] = []): void {
   // 分时窗走自绘 SVG，不初始化 KLineCharts（坐标系完全不同，复用反而会串数据）
   if (intraday) return
   const el = document.querySelector<HTMLElement>('#chart')
@@ -754,6 +809,7 @@ function mountChart(candles: Candle[], intraday: boolean): void {
   chartView = new ChartView(el)
   chartView.mount()
   chartView.setBars(candles)
+  chartView.setMarkers(markers)
 }
 
 function renderTrain(): void {
@@ -766,6 +822,10 @@ function renderTrain(): void {
   const id = intraday ? e.intraday() : null
   const avg = id?.points[id.points.length - 1]?.avg ?? q.price
   const legend = intraday ? intradayLegend(q, avg) : indicatorLegend(candles, e.viewLabel)
+  const markers = intraday ? [] : tradeMarkers(candles, e.tradeList)
+  const dayMarks = id
+    ? intradayMarks(e.tradeList, id.date, id.points[id.points.length - 1]?.time ?? '15:00')
+    : []
   app.innerHTML = `${header('train')}
     <main class="page">
       <div id="quote-wrap">${quotePanel(q)}</div>
@@ -773,26 +833,22 @@ function renderTrain(): void {
       <div class="indicator-legend" id="indicator-legend">${legend}</div>
       <div class="chart-area">
         ${intraday
-          ? `<div id="intraday-wrap">${renderIntraday(id)}</div>`
+          ? `<div id="intraday-wrap">${renderIntraday(id, dayMarks)}</div>`
           : '<div id="chart" class="chart"></div>'}
         ${chartOverlayTools(intraday)}
       </div>
       <div id="action-bar-wrap">${actionBar(e)}</div>
-      <section class="stats compact">
-        <div><span>可用资金</span><b id="s-cash">${money(e.cashValue)}</b></div>
-        <div><span>持仓</span><b id="s-shares">${e.shareCount} 股</b></div>
-        <div><span>浮动盈亏</span><b id="s-profit" class="${e.profit >= 0 ? 'up' : 'down'}">${pct(e.profitPct)}</b></div>
-      </section>
+      ${positionPanel(e)}
       ${moreOps(intraday)}
       <div id="history-wrap">${historyBar(e.historyPosition())}</div>
       <p class="fee-note" id="fee-note">${feeNote(e)}</p>
-      <p class="blind-note">股票名称与日期已隐藏 · 每次推进一个完整交易日，分时整屏换一天 · 四个窗口是同一局同一只股票 · 缩小左拉或点「«」可看 2015 年起完整历史</p>
-      <section class="panel">
+      <p class="blind-note">股票名称与日期已隐藏 · <b class="up">B</b> 买入 / <b class="down">S</b> 卖出已标在图上 · 每次推进一个完整交易日，分时整屏换一天 · 四个窗口是同一局同一只股票 · 缩小左拉或点「«」可看 2015 年起完整历史</p>
+      <section class="panel" id="trade-panel">
         <h3>本局操作</h3>
         <div id="trade-list">${renderTrades(e.tradeList)}</div>
       </section>
     </main>`
-  mountChart(candles, intraday)
+  mountChart(candles, intraday, markers)
 }
 
 function renderReview(): void {
@@ -835,7 +891,7 @@ function renderReview(): void {
       <div class="indicator-legend" id="indicator-legend">${indicatorLegend(r.candles, r.periodLabel)}</div>
       <div class="chart-area"><div id="chart" class="chart"></div>${chartOverlayTools(false)}</div>
       ${chartTools(false)}
-      <p class="blind-note">上图为完整走势；买卖点标记在下方资金曲线上</p>
+      <p class="blind-note">上图为完整走势，<b class="up">B</b> 买入 / <b class="down">S</b> 卖出已标在 K 线上；下方资金曲线同步标注</p>
       <section class="panel">
         <h3>本局手续费</h3>
         <div class="fee-grid">
@@ -861,7 +917,7 @@ function renderReview(): void {
         <button class="btn ghost" data-action="records">查看记录</button>
       </section>
     </main>`
-  mountChart(r.candles, false)
+  mountChart(r.candles, false, tradeMarkers(r.candles, r.trades))
 }
 
 // ---- 条件单 ---------------------------------------------------------
@@ -1283,8 +1339,11 @@ function updateTrainUI(): void {
 
   if (intraday) {
     const id = e.intraday()
+    const dayMarks = id
+      ? intradayMarks(e.tradeList, id.date, id.points[id.points.length - 1]?.time ?? '15:00')
+      : []
     const box = document.getElementById('intraday-wrap')
-    if (box) box.innerHTML = renderIntraday(id)
+    if (box) box.innerHTML = renderIntraday(id, dayMarks)
     const legend = document.getElementById('indicator-legend')
     if (legend) legend.innerHTML = intradayLegend(q, id?.points[id.points.length - 1]?.avg ?? q.price)
   } else {
@@ -1297,6 +1356,7 @@ function updateTrainUI(): void {
     } else {
       chartView?.setBars(candles, true)
     }
+    chartView?.setMarkers(tradeMarkers(candles, e.tradeList))
     const legend = document.getElementById('indicator-legend')
     if (legend) legend.innerHTML = indicatorLegend(candles, e.viewLabel)
   }
@@ -1314,11 +1374,9 @@ function updateTrainUI(): void {
     const el = document.getElementById(id)
     if (!el) return
     el.textContent = text
-    if (cls) el.className = cls
+    if (cls !== undefined) el.className = cls
   }
-  set('s-cash', money(engine.cashValue))
-  set('s-shares', `${engine.shareCount} 股`)
-  set('s-profit', pct(engine.profitPct), engine.profit >= 0 ? 'up' : 'down')
+  updatePositionPanel(engine, set)
   // 操作条只局部改文字，绝不重建按钮节点：一局 150 天用户会连续快点
   // 「下一天」，整条重建会让后续点击落在已被移除的旧节点上而丢步。
   set('action-progress', `${engine.index + 1} / ${engine.total} 天`)
@@ -1449,6 +1507,9 @@ async function handle(action: string, target: HTMLElement): Promise<void> {
     }
     case 'switchStock':
       openSummary('switch')
+      return
+    case 'tradeList':
+      document.getElementById('trade-panel')?.scrollIntoView({ behavior: 'smooth', block: 'start' })
       return
     case 'next':
       if (engine?.isEnded) {

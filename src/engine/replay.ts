@@ -246,6 +246,78 @@ function aggregateCandles(days: Candle[], unit: 'week' | 'month'): Candle[] {
   })
 }
 
+/** K 线上的一个买卖点标记；index 为 candle.timestamp（也就是 KLineData 的下标）。 */
+export interface TradeMarker {
+  index: number
+  /** 买点贴该 K 线最高价、卖点贴最低价，绘制时再上下偏移 */
+  value: number
+  side: 'buy' | 'sell'
+  /** 同一根 K 上多笔成交时横向错开 */
+  stack: number
+  count: number
+}
+
+/** 分视图的一笔成交，字段是 Trade 的最小子集，避免 UI 层反向依赖整个引擎。 */
+export interface TradeMarkInput {
+  date: string
+  side: 'buy' | 'sell'
+  price: number
+}
+
+/**
+ * 把成交记录落到「当前视图」的 K 线上。
+ * 日 K 的 label 就是当天；周 / 月 K 的 label 是该周期已揭示的最后一天，
+ * 所以统一取「第一根 label >= 成交日」的 K：不论周期是否走完都能落点，
+ * 也绝不会把标记画到未来的 K 上。
+ */
+export function tradeMarkers(candles: Candle[], trades: TradeMarkInput[]): TradeMarker[] {
+  if (!candles.length || !trades.length) return []
+  const labels = candles.map((c) => c.label.slice(0, 10))
+  const stacks = new Map<number, number>()
+  const out: TradeMarker[] = []
+  for (const t of trades) {
+    const day = t.date.slice(0, 10)
+    let lo = 0
+    let hi = labels.length - 1
+    let idx = -1
+    while (lo <= hi) {
+      const mid = (lo + hi) >> 1
+      if (labels[mid] >= day) {
+        idx = mid
+        hi = mid - 1
+      } else lo = mid + 1
+    }
+    if (idx < 0) continue
+    const c = candles[idx]
+    const stack = stacks.get(c.timestamp) ?? 0
+    stacks.set(c.timestamp, stack + 1)
+    out.push({
+      index: c.timestamp,
+      value: t.side === 'buy' ? c.high : c.low,
+      side: t.side,
+      stack,
+      count: 0,
+    })
+  }
+  for (const m of out) m.count = stacks.get(m.index) ?? 1
+  return out
+}
+
+/** 当日分时图上的买卖点：按成交时间落到分钟点，找不到就落在收盘。 */
+export function intradayMarks(
+  trades: TradeMarkInput[],
+  date: string,
+  fallbackTime: string,
+): { time: string; side: 'buy' | 'sell'; price: number }[] {
+  return trades
+    .filter((t) => t.date.slice(0, 10) === date)
+    .map((t) => ({
+      time: t.date.length > 10 ? t.date.slice(11, 16) : fallbackTime,
+      side: t.side,
+      price: t.price,
+    }))
+}
+
 /**
  * 回放引擎：唯一持有完整一局历史的地方。
  *
