@@ -1304,7 +1304,6 @@ function switchWindow(key: PeriodKey): void {
   engine.setView(key, meta.label)
   view = 'train'
   render()
-  toast(`已切到${meta.label}：同一只股票、同一时间，账户与条件单不变`)
 }
 
 function stopAutoPlay(): void {
