@@ -5,6 +5,7 @@ import {
   pickGame,
   windowMeta,
   type DataManifest,
+  type Game,
   type PeriodKey,
   type SessionPackage,
 } from './data/segments'
@@ -111,6 +112,12 @@ let autoTimer = 0
 let toastTimer = 0
 let orderTab: OrderTab = 'watching'
 let draft: OrderDraft | null = null
+/** 当前这一局的对局参数，「重新训练」要原样再来一次 */
+let currentGame: Game | null = null
+/** 总结弹层挂在 body 上，避免 render() 重建 #app 时被冲掉 */
+let summaryEl: HTMLDivElement | null = null
+/** 走到最后一根 K 只自动弹一次；关闭后由操作条上的「结束训练」再唤出 */
+let endSummaryShown = false
 
 function toast(message: string): void {
   let node = document.querySelector<HTMLDivElement>('#toast')
@@ -125,6 +132,167 @@ function toast(message: string): void {
   el.classList.add('show')
   window.clearTimeout(toastTimer)
   toastTimer = window.setTimeout(() => el.classList.remove('show'), 2600)
+}
+
+// ---- 结束训练总结 ---------------------------------------------------
+
+const shortCode = (code: string): string => code.replace(/^[a-z]+\./i, '')
+const compactDate = (label: string): string => label.slice(0, 10).replace(/-/g, '')
+const stockName = (code: string): string =>
+  sessions?.symbols[code]?.fundamentals?.name ?? '训练标的'
+
+/**
+ * 底部总结面板，对齐参考图：
+ * 结束训练 / 本股总收益＋分享 / 收益+X / 股票名 代码 重新训练 /
+ * 日期区间 区间涨幅 / 复盘 换股。
+ * 底色沿用 App 深色主题，涨跌仍按 A 股习惯：涨红跌绿。
+ */
+function summarySheet(e: ReplayEngine, reason: 'switch' | 'finished'): string {
+  const range = e.sessionRange
+  const profit = e.profit
+  const sign = profit >= 0 ? '+' : '-'
+  const profitCls = profit >= 0 ? 'up' : 'down'
+  const rangeCls = range.rangePct >= 0 ? 'up' : 'down'
+  const tag = reason === 'finished' ? '本局已走完' : '中途结束本局'
+  const hint = range.complete
+    ? ''
+    : `<p class="summary-hint">还有 ${range.totalDays - range.daysPlayed} 天没走完，区间涨幅只统计已训练部分</p>`
+  return `<div class="summary-sheet" role="dialog" aria-modal="true" aria-labelledby="summary-title">
+    <div class="summary-head">
+      <div><h2 id="summary-title">结束训练</h2><span class="summary-head-tag">${tag}</span></div>
+      <button class="summary-close" data-summary-action="close" aria-label="关闭">×</button>
+    </div>
+    <div class="summary-body">
+      <div class="summary-title-row">
+        <b>本股总收益</b>
+        <button class="link" data-summary-action="share">分享</button>
+      </div>
+      <p class="summary-profit ${profitCls}">收益 ${sign}¥${nf.format(Math.abs(profit))}</p>
+      <p class="summary-sub">收益率 ${pct(e.profitPct)} · 交易 ${e.tradeList.length} 次 · 已训练 ${range.daysPlayed} / ${range.totalDays} 天</p>
+      <p class="summary-stock">${stockName(e.code)} <span>${shortCode(e.code)}</span>
+        <button class="link" data-summary-action="restart">重新训练</button></p>
+      <p class="summary-range">${compactDate(range.start)} - ${compactDate(range.end)} 区间涨幅 <b class="${rangeCls}">${pct(range.rangePct)}</b></p>
+      ${hint}
+    </div>
+    <div class="summary-actions">
+      <button data-summary-action="review">复盘</button>
+      <button data-summary-action="switch">换股</button>
+    </div>
+  </div>`
+}
+
+function openSummary(reason: 'switch' | 'finished'): void {
+  if (!engine || summaryEl) return
+  stopAutoPlay()
+  const mask = document.createElement('div')
+  mask.className = 'summary-mask'
+  mask.id = 'summary-mask'
+  mask.innerHTML = summarySheet(engine, reason)
+  mask.addEventListener('click', (ev) => {
+    const target = (ev.target as HTMLElement).closest<HTMLElement>('[data-summary-action]')
+    if (target) {
+      void handleSummaryAction(target.dataset.summaryAction ?? '')
+      return
+    }
+    if (ev.target === mask) closeSummary()
+  })
+  document.body.appendChild(mask)
+  document.body.classList.add('summary-open')
+  summaryEl = mask
+}
+
+function closeSummary(): void {
+  summaryEl?.remove()
+  summaryEl = null
+  document.body.classList.remove('summary-open')
+}
+
+/** 结束本局并落一条训练记录；复盘 / 换股 / 重新训练三个出口共用，避免重复计数。 */
+function finalizeCurrent(): SessionResult | null {
+  if (!engine) return null
+  if (!result) {
+    result = engine.finish()
+    try {
+      saveRecord(toStored(result))
+      queueAutoSync()
+    } catch {
+      // 本机存储不可用时仍允许继续复盘，不让存储异常卡住训练流程
+    }
+  }
+  return result
+}
+
+async function shareSummary(): Promise<void> {
+  if (!engine) return
+  const r = engine.sessionRange
+  const text = [
+    `K线训练 · ${stockName(engine.code)}(${shortCode(engine.code)})`,
+    `${compactDate(r.start)} - ${compactDate(r.end)} 区间涨幅 ${pct(r.rangePct)}`,
+    `本股总收益 ${engine.profit >= 0 ? '+' : '-'}¥${nf.format(Math.abs(engine.profit))}（${pct(engine.profitPct)}）`,
+    `已训练 ${r.daysPlayed} / ${r.totalDays} 天 · 交易 ${engine.tradeList.length} 次`,
+  ].join('\n')
+  const nav = navigator as Navigator & { share?: (data: ShareData) => Promise<void> }
+  if (typeof nav.share === 'function') {
+    let shared = false
+    try {
+      // 部分浏览器暴露 share 却没有可用的分享面板，Promise 会一直悬着；
+      // 加 6 秒兜底，超时就退回复制，不让「分享」按钮看起来点了没反应。
+      await Promise.race([
+        nav.share({ title: 'K线训练 · 结束训练', text }).then(() => {
+          shared = true
+        }),
+        new Promise<never>((_, reject) =>
+          window.setTimeout(() => reject(new Error('share-timeout')), 6000),
+        ),
+      ])
+    } catch (err) {
+      if (err instanceof DOMException && err.name === 'AbortError') return
+    }
+    if (shared) return
+  }
+  try {
+    await navigator.clipboard.writeText(text)
+    toast('战绩已复制，可以粘贴分享')
+  } catch {
+    toast('分享不可用，请截图保存')
+  }
+}
+
+async function handleSummaryAction(action: string): Promise<void> {
+  if (action === 'close') {
+    closeSummary()
+    return
+  }
+  if (action === 'share') {
+    await shareSummary()
+    return
+  }
+  if (action === 'review') {
+    if (!finalizeCurrent()) return
+    closeSummary()
+    view = 'review'
+    render()
+    return
+  }
+  if (action === 'switch') {
+    finalizeCurrent()
+    closeSummary()
+    startGame()
+    view = 'train'
+    render()
+    if (engine?.orderList.some((o) => o.status === 'paused')) {
+      toast('上一局监控中的条件单已暂停，可在条件单里恢复或编辑')
+    }
+    return
+  }
+  if (action === 'restart') {
+    finalizeCurrent()
+    closeSummary()
+    startGame(currentGame ?? undefined)
+    view = 'train'
+    render()
+    toast('已重新训练本股，回到第 1 天')
+  }
 }
 
 const installGuide = standalone
@@ -182,12 +350,12 @@ function actionBar(e: ReplayEngine): string {
     (o) => o.status === 'watching' || o.status === 'paused',
   ).length
   return `<div class="action-bar">
-    <button data-action="new" title="换一局（换股）">换股</button>
+    <button data-action="switchStock" title="结束本局并换股">换股</button>
     <button data-action="orders" id="action-orders" title="条件单">条件单${watching ? `<i>${watching}</i>` : ''}</button>
     <button data-action="buy" title="买入 100 股">买入</button>
     <button data-action="sell" title="卖出 100 股">卖出</button>
     <span class="action-progress" id="action-progress">${e.index + 1} / ${e.total} 天</span>
-    <button class="action-next" data-action="next" id="action-next">${nextLabel(e.currentView)}</button>
+    <button class="action-next" data-action="next" id="action-next">${e.isEnded ? '结束训练' : nextLabel(e.currentView)}</button>
   </div>`
 }
 
@@ -839,20 +1007,23 @@ function render(): void {
   renderShell()
 }
 
-function startGame(): void {
+function startGame(game?: Game): void {
   if (!sessions) return
   stopAutoPlay()
-  const game = pickGame(sessions)
-  const symbol = sessions.symbols[game.c]
+  const picked = game ?? pickGame(sessions)
+  currentGame = { ...picked }
+  const symbol = sessions.symbols[picked.c]
   if (!symbol) return
   const meta = windowMeta(sessions, engine?.currentView ?? 'day')
   const cfg = configForWindow(meta, loadFeeSchedule())
   // 条件单是账户级的：换股后仍在列表里，但监控中的自动暂停
-  const carried = engine ? pauseOnSwitch(engine.orderList, game.c) : []
-  engine = ReplayEngine.create(symbol, game, cfg)
+  const carried = engine ? pauseOnSwitch(engine.orderList, picked.c) : []
+  engine = ReplayEngine.create(symbol, picked, cfg)
   engine.setOrders(carried)
   result = null
   draft = null
+  endSummaryShown = false
+  closeSummary()
 }
 
 function switchWindow(key: PeriodKey): void {
@@ -936,7 +1107,7 @@ function updateTrainUI(): void {
   // 操作条只局部改文字，绝不重建按钮节点：一局 150 天用户会连续快点
   // 「下一天」，整条重建会让后续点击落在已被移除的旧节点上而丢步。
   set('action-progress', `${engine.index + 1} / ${engine.total} 天`)
-  set('action-next', nextLabel(engine.currentView))
+  set('action-next', engine.isEnded ? '结束训练' : nextLabel(engine.currentView))
   const orders = document.getElementById('action-orders')
   if (orders) {
     const watching = engine.orderList.filter(
@@ -955,7 +1126,11 @@ function advanceStep(): void {
   const hasMore = engine.advance()
   updateTrainUI()
   notifyOrders(before, engine.orderList)
-  if (!hasMore) toast('已到最后一根，点「结束并复盘」看结果')
+  // 走到本局最后一根 K：自动弹总结，不再让用户自己去找「结束并复盘」
+  if (!hasMore && !endSummaryShown) {
+    endSummaryShown = true
+    openSummary('finished')
+  }
 }
 
 function toggleAutoPlay(): void {
@@ -1057,7 +1232,14 @@ async function handle(action: string, target: HTMLElement): Promise<void> {
       }
       return
     }
+    case 'switchStock':
+      openSummary('switch')
+      return
     case 'next':
+      if (engine?.isEnded) {
+        openSummary('finished')
+        return
+      }
       advanceStep()
       return
     case 'auto':
@@ -1106,11 +1288,9 @@ async function handle(action: string, target: HTMLElement): Promise<void> {
       applyTrade(engine ? engine.sell(engine.availableShares) : undefined)
       return
     case 'finish': {
-      if (!engine) return
+      if (!finalizeCurrent()) return
       stopAutoPlay()
-      result = engine.finish()
-      saveRecord(toStored(result))
-      queueAutoSync()
+      closeSummary()
       view = 'review'
       render()
       return
@@ -1360,6 +1540,11 @@ document.addEventListener('change', (event) => {
     })
     .catch(() => toast('导入失败：文件格式不对'))
   input.value = ''
+})
+
+// 总结弹层可以用 Esc / 点遮罩关掉：中途点错「换股」还能继续这一局
+document.addEventListener('keydown', (event) => {
+  if (event.key === 'Escape' && summaryEl) closeSummary()
 })
 
 window.addEventListener('resize', () => chartView?.resize())

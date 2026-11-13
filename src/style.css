@@ -1415,3 +1415,152 @@ h1 {
   color: var(--accent);
   font-size: 10px;
 }
+
+/* ---- 结束训练总结（底部弹层，参考同花顺「结束训练」） ---- */
+body.summary-open { overflow: hidden; }
+
+.summary-mask {
+  position: fixed;
+  inset: 0;
+  z-index: 2000;
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  background: rgba(5, 8, 14, 0.62);
+  backdrop-filter: blur(2px);
+  animation: summary-fade 0.18s ease-out;
+}
+
+.summary-sheet {
+  width: 100%;
+  max-width: 520px;
+  padding: 16px 20px calc(20px + env(safe-area-inset-bottom));
+  border: 1px solid var(--line);
+  border-bottom: 0;
+  border-radius: 18px 18px 0 0;
+  background: var(--panel);
+  box-shadow: 0 -14px 40px rgba(0, 0, 0, 0.45);
+  animation: summary-rise 0.22s ease-out;
+}
+
+.summary-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  padding-bottom: 12px;
+  border-bottom: 1px solid var(--line);
+}
+
+.summary-head h2 { margin: 0; font-size: 17px; font-weight: 600; }
+.summary-head-tag { display: block; margin-top: 3px; color: var(--muted); font-size: 11px; }
+
+.summary-close {
+  width: 30px;
+  height: 30px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--muted);
+  font-family: inherit;
+  font-size: 24px;
+  line-height: 1;
+  cursor: pointer;
+  touch-action: manipulation;
+}
+
+.summary-body { padding: 18px 0 2px; text-align: center; }
+
+.summary-title-row {
+  display: flex;
+  align-items: baseline;
+  justify-content: center;
+  gap: 14px;
+}
+
+.summary-title-row b { font-size: 16px; font-weight: 600; }
+
+.link {
+  padding: 2px 0;
+  border: 0;
+  background: transparent;
+  color: var(--accent);
+  font-family: inherit;
+  font-size: 14px;
+  cursor: pointer;
+  touch-action: manipulation;
+}
+
+.link:active { opacity: 0.65; }
+
+.summary-profit {
+  margin: 12px 0 5px;
+  font-size: 21px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+.summary-sub {
+  margin: 0;
+  color: var(--muted);
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+}
+
+.summary-stock {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: center;
+  gap: 6px;
+  margin: 18px 0 7px;
+  font-size: 15px;
+  font-weight: 600;
+}
+
+.summary-stock span {
+  color: var(--muted);
+  font-size: 13px;
+  font-weight: 400;
+  font-variant-numeric: tabular-nums;
+}
+
+.summary-range {
+  margin: 0;
+  font-size: 13px;
+  font-variant-numeric: tabular-nums;
+}
+
+.summary-range b { font-weight: 600; }
+.summary-hint { margin: 9px 0 0; color: var(--muted); font-size: 11px; }
+
+.summary-actions {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 14px;
+  margin-top: 20px;
+}
+
+.summary-actions button {
+  min-height: 44px;
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  background: transparent;
+  color: var(--text);
+  font-family: inherit;
+  font-size: 15px;
+  cursor: pointer;
+  touch-action: manipulation;
+}
+
+.summary-actions button:active { background: var(--bg); }
+
+@keyframes summary-fade {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@keyframes summary-rise {
+  from { transform: translateY(24px); opacity: 0.6; }
+  to { transform: translateY(0); opacity: 1; }
+}

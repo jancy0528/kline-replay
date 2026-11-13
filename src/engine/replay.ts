@@ -108,6 +108,20 @@ export interface Trade {
   orderId?: string
 }
 
+/** 「结束训练」总结弹层用的本局区间信息；读取它不会结束本局。 */
+export interface SessionRange {
+  /** 训练区间起点（第一根 5 分钟 K 的标签） */
+  start: string
+  /** 已推进到的最后一根 K 的标签；走完整局时等于终点 */
+  end: string
+  /** 是否已走到本局最后一根 K */
+  complete: boolean
+  /** 起点价（第一根 K 的开盘）→ 当前价 的区间涨幅 */
+  rangePct: number
+  daysPlayed: number
+  totalDays: number
+}
+
 export interface Score {
   pnlPct: number
   benchmarkPct: number
@@ -657,6 +671,22 @@ export class ReplayEngine {
 
   get total(): number {
     return Math.max(1, this.dayEnds.length)
+  }
+
+  /**
+   * 总结弹层的区间数据。中途点「换股」时只统计已推进到的那一天，
+   * 绝不把后面没走的行情算进区间涨幅，也不提前暴露完整区间终点。
+   */
+  get sessionRange(): SessionRange {
+    const first = this.minBars[this.start][1]
+    return {
+      start: this.minBars[this.start][0],
+      end: this.currentLabel,
+      complete: this.now >= this.end,
+      rangePct: first ? round2((this.currentPrice / first - 1) * 100) : 0,
+      daysPlayed: this.index + 1,
+      totalDays: this.total,
+    }
   }
 
   get orderList(): ConditionalOrder[] {
