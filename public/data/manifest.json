@@ -1,46 +1,50 @@
 {
-  "version": 6,
-  "generatedAt": "2026-11-13T00:20:53+00:00",
-  "source": "baostock 前复权日线（2015 起完整历史） + 新浪 5 分钟线 + 腾讯股本快照",
+  "version": 7,
+  "generatedAt": "2026-11-13T01:40:51+00:00",
+  "source": "baostock 前复权日线（2015 起完整历史） + baostock 一年期 5 分钟线 + 腾讯股本快照",
   "adjust": "前复权，逐日按收盘价对齐",
-  "dataFile": "sessions-ec2f99827a.json",
-  "bytes": 3150407,
+  "dataFile": "sessions-64aae6c3e2.json",
+  "bytes": 9417621,
   "symbols": 18,
   "games": 288,
+  "gameDays": 150,
+  "minuteBars": 139824,
   "historyBars": 46693,
   "selection": {
     "symbols": 94,
     "signals": 157,
     "scanned": 1049,
-    "gamesWithSignal": 288
+    "gamesWithSignal": 288,
+    "screenSignals": 147,
+    "historySignals": 141
   },
   "windows": [
     {
       "key": "m5",
       "label": "分时",
       "visible": 60,
-      "advance": 15,
+      "advance": 150,
       "note": "当日完整分时：价格线 + 均价线，一次推进一整天"
     },
     {
       "key": "day",
       "label": "日K",
       "visible": 60,
-      "advance": 15,
+      "advance": 150,
       "note": "带 2015 年起完整历史；当日 K 由完整日内分钟线合成"
     },
     {
       "key": "week",
       "label": "周K",
       "visible": 40,
-      "advance": 15,
+      "advance": 150,
       "note": "由日线按自然周聚合，当前周由已揭示数据合成"
     },
     {
       "key": "month",
       "label": "月K",
       "visible": 24,
-      "advance": 15,
+      "advance": 150,
       "note": "由日线按自然月聚合，当前月由已揭示数据合成"
     }
   ],
@@ -49,28 +53,28 @@
       "key": "m5",
       "label": "分时",
       "visible": 60,
-      "advance": 15,
+      "advance": 150,
       "note": "当日完整分时：价格线 + 均价线，一次推进一整天"
     },
     {
       "key": "day",
       "label": "日K",
       "visible": 60,
-      "advance": 15,
+      "advance": 150,
       "note": "带 2015 年起完整历史；当日 K 由完整日内分钟线合成"
     },
     {
       "key": "week",
       "label": "周K",
       "visible": 40,
-      "advance": 15,
+      "advance": 150,
       "note": "由日线按自然周聚合，当前周由已揭示数据合成"
     },
     {
       "key": "month",
       "label": "月K",
       "visible": 24,
-      "advance": 15,
+      "advance": 150,
       "note": "由日线按自然月聚合，当前月由已揭示数据合成"
     }
   ]

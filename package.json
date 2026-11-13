@@ -11,6 +11,7 @@
     "preview": "vite preview",
     "fetch": "python tools/fetch_baostock.py",
     "data:minutes": "python tools/fetch_minutes.py",
+    "data:minutes:long": "python tools/fetch_minutes_long.py",
     "data:select": "python tools/select_stocks.py",
     "data:pool": "python tools/fetch_pool.py",
     "data:build": "python tools/build_sessions.py"

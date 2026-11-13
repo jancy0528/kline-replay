@@ -169,11 +169,49 @@ function windowBar(e: ReplayEngine): string {
   const buttons = items
     .map((w) => `<button data-window="${w.key}" class="${w.key === e.currentView ? 'on' : ''}">${w.label}</button>`)
     .join('')
-  const watching = e.orderList.filter((o) => o.status === 'watching').length
-  return `<div class="window-bar">
-      <div class="window-tabs">${buttons}</div>
-      <button class="order-entry" data-action="orders" aria-label="条件单">条件单${watching ? `<b>${watching}</b>` : ''}</button>
-    </div>`
+  return `<div class="window-bar"><div class="window-tabs">${buttons}</div></div>`
+}
+
+/**
+ * 操作条：紧贴成交量副图下方的一行，对应参考图
+ * 「换股 / 条件单 / 买入 / 卖出 / 128天 / 下一步」。
+ * 训练时最常用的是推进和买卖，必须和 K 线在同一屏，不能滚半天才点到。
+ */
+function actionBar(e: ReplayEngine): string {
+  const watching = e.orderList.filter(
+    (o) => o.status === 'watching' || o.status === 'paused',
+  ).length
+  return `<div class="action-bar">
+    <button data-action="new" title="换一局（换股）">换股</button>
+    <button data-action="orders" id="action-orders" title="条件单">条件单${watching ? `<i>${watching}</i>` : ''}</button>
+    <button data-action="buy" title="买入 100 股">买入</button>
+    <button data-action="sell" title="卖出 100 股">卖出</button>
+    <span class="action-progress" id="action-progress">${e.index + 1} / ${e.total} 天</span>
+    <button class="action-next" data-action="next" id="action-next">${nextLabel(e.currentView)}</button>
+  </div>`
+}
+
+/** 次要操作收进折叠面板，不再挤占图表与操作条之间的黄金位置。 */
+function moreOps(intraday: boolean): string {
+  const draw = intraday ? '' : `<div class="btn-row">
+      <button class="btn ghost" data-action="drawLine">趋势线</button>
+      <button class="btn ghost" data-action="drawHLine">水平线</button>
+    </div>
+    <div class="btn-row"><button class="btn ghost" data-action="clearDraw">清除画线</button></div>`
+  return `<details class="more-ops">
+    <summary>更多操作 <span>全仓 / 清仓 / 自动播放 / 画线 / 复盘</span> ▾</summary>
+    <div class="more-ops-body">
+      <div class="btn-row">
+        <button class="btn" data-action="buyAll">全仓买</button>
+        <button class="btn" data-action="sellAll">清仓</button>
+      </div>
+      <div class="btn-row">
+        <button class="btn" data-action="auto" id="auto-btn">${autoPlaying ? '暂停 ⏸' : '自动播放 ▶'}</button>
+        <button class="btn ghost" data-action="finish">结束并复盘</button>
+      </div>
+      ${draw}
+    </div>
+  </details>`
 }
 
 /** 金额自适应：刚开盘只有几百万时显示「万」，放量后显示「亿」。 */
@@ -278,6 +316,7 @@ function chartOverlayTools(intraday: boolean): string {
   </div>`
 }
 
+/** 复盘页的画线工具行；训练页已收进「更多操作」，不再占首屏。 */
 function chartTools(intraday: boolean): string {
   if (intraday) return ''
   return `<div class="chart-tools">
@@ -356,32 +395,16 @@ function renderTrain(): void {
           : '<div id="chart" class="chart"></div>'}
         ${chartOverlayTools(intraday)}
       </div>
-      ${chartTools(intraday)}
-      <div id="history-wrap">${historyBar(e.historyPosition())}</div>
-      <p class="blind-note">股票名称与日期已隐藏 · 每次推进一个完整交易日，分时整屏换一天 · 四个窗口是同一局同一只股票</p>
-      <section class="stats">
+      <div id="action-bar-wrap">${actionBar(e)}</div>
+      <section class="stats compact">
         <div><span>可用资金</span><b id="s-cash">${money(e.cashValue)}</b></div>
         <div><span>持仓</span><b id="s-shares">${e.shareCount} 股</b></div>
         <div><span>浮动盈亏</span><b id="s-profit" class="${e.profit >= 0 ? 'up' : 'down'}">${pct(e.profitPct)}</b></div>
-        <div><span>本局进度</span><b id="s-progress">第 ${e.index + 1} / ${e.total} 天</b></div>
       </section>
+      ${moreOps(intraday)}
+      <div id="history-wrap">${historyBar(e.historyPosition())}</div>
       <p class="fee-note" id="fee-note">${feeNote(e)}</p>
-      <section class="controls">
-        <div class="btn-row">
-          <button class="btn primary" data-action="next">${nextLabel(e.currentView)} →</button>
-          <button class="btn" data-action="auto" id="auto-btn">${autoPlaying ? '暂停 ⏸' : '自动播放 ▶'}</button>
-        </div>
-        <div class="btn-row">
-          <button class="btn" data-action="buy">买 100</button>
-          <button class="btn" data-action="buyAll">全仓买</button>
-          <button class="btn" data-action="sell">卖 100</button>
-          <button class="btn" data-action="sellAll">清仓</button>
-        </div>
-        <div class="btn-row">
-          <button class="btn ghost" data-action="finish">结束并复盘</button>
-          <button class="btn ghost" data-action="new">换一局</button>
-        </div>
-      </section>
+      <p class="blind-note">股票名称与日期已隐藏 · 每次推进一个完整交易日，分时整屏换一天 · 四个窗口是同一局同一只股票 · 缩小左拉或点「«」可看 2015 年起完整历史</p>
       <section class="panel">
         <h3>本局操作</h3>
         <div id="trade-list">${renderTrades(e.tradeList)}</div>
@@ -910,7 +933,17 @@ function updateTrainUI(): void {
   set('s-cash', money(engine.cashValue))
   set('s-shares', `${engine.shareCount} 股`)
   set('s-profit', pct(engine.profitPct), engine.profit >= 0 ? 'up' : 'down')
-  set('s-progress', `第 ${engine.index + 1} / ${engine.total} 天`)
+  // 操作条只局部改文字，绝不重建按钮节点：一局 150 天用户会连续快点
+  // 「下一天」，整条重建会让后续点击落在已被移除的旧节点上而丢步。
+  set('action-progress', `${engine.index + 1} / ${engine.total} 天`)
+  set('action-next', nextLabel(engine.currentView))
+  const orders = document.getElementById('action-orders')
+  if (orders) {
+    const watching = engine.orderList.filter(
+      (o) => o.status === 'watching' || o.status === 'paused',
+    ).length
+    orders.innerHTML = `条件单${watching ? `<i>${watching}</i>` : ''}`
+  }
   set('s-fees', yuan2(engine.totalFees.total))
   const list = document.getElementById('trade-list')
   if (list) list.innerHTML = renderTrades(engine.tradeList)

@@ -304,6 +304,71 @@ h1 {
   font-variant-numeric: tabular-nums;
 }
 
+/* 训练页账户条：压成一行三格，把纵向空间让给 K 线与操作条 */
+.stats.compact {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  margin-top: 8px;
+  border-radius: 9px;
+}
+.stats.compact div { padding: 7px 9px; gap: 2px; }
+.stats.compact span { font-size: 10px; }
+.stats.compact b { font-size: 13px; }
+
+/* 紧贴成交量副图下方的一行操作条，参考图里就是「换股/条件单/买入/卖出/天数/下一步」 */
+.action-bar {
+  display: grid;
+  grid-template-columns: repeat(6, minmax(0, 1fr));
+  align-items: center;
+  gap: 4px;
+  margin: 4px 0 0;
+  padding: 6px 0 8px;
+  border-bottom: 1px solid var(--line);
+}
+
+.action-bar button {
+  min-height: 38px;
+  padding: 4px 2px;
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  background: var(--panel);
+  color: var(--text);
+  font-family: inherit;
+  font-size: 11px;
+  white-space: nowrap;
+  cursor: pointer;
+  touch-action: manipulation;
+}
+
+.action-bar button:active { background: var(--bg); }
+
+.action-bar .action-next {
+  border-color: transparent;
+  background: var(--accent);
+  color: #0d1320;
+  font-weight: 600;
+}
+
+.action-bar .action-progress {
+  text-align: center;
+  color: var(--muted);
+  font-size: 10px;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.action-bar i {
+  display: inline-block;
+  min-width: 13px;
+  margin-left: 2px;
+  padding: 0 3px;
+  border-radius: 7px;
+  background: var(--up);
+  color: #fff;
+  font-size: 9px;
+  font-style: normal;
+  line-height: 14px;
+}
+
 .up { color: var(--up); }
 .down { color: var(--down); }
 
@@ -919,6 +984,39 @@ h1 {
 
 .blind-note + .stats,
 .history-bar + .blind-note + .stats { margin-top: 10px; }
+
+/* 次要操作折叠：默认收起，不占首屏 */
+.more-ops {
+  margin-top: 8px;
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  background: var(--panel);
+  font-size: 11px;
+}
+
+.more-ops > summary {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 9px 11px;
+  color: var(--text);
+  cursor: pointer;
+  list-style: none;
+}
+
+.more-ops > summary::-webkit-details-marker { display: none; }
+.more-ops > summary span { color: var(--muted); font-size: 10px; }
+
+.more-ops-body {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 10px 11px 11px;
+  border-top: 1px solid var(--line);
+}
+
+.more-ops-body .btn-row { gap: 8px; }
+.more-ops-body .btn { min-height: 38px; font-size: 12px; }
 
 /* 同步设置 */
 .sync-state {
