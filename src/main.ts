@@ -28,6 +28,7 @@ import {
 } from './engine/records'
 import {
   KIND_LABEL,
+  computeFees,
   fromWan,
   hasCustomFees,
   loadFeeSchedule,
@@ -118,6 +119,9 @@ let currentGame: Game | null = null
 let summaryEl: HTMLDivElement | null = null
 /** 走到最后一根 K 只自动弹一次；关闭后由操作条上的「结束训练」再唤出 */
 let endSummaryShown = false
+/** 买卖下单弹层，同样挂在 body 上；与总结弹层互斥 */
+let tradeEl: HTMLDivElement | null = null
+let tradeSide: 'buy' | 'sell' = 'buy'
 
 function toast(message: string): void {
   let node = document.querySelector<HTMLDivElement>('#toast')
@@ -197,14 +201,19 @@ function openSummary(reason: 'switch' | 'finished'): void {
     if (ev.target === mask) closeSummary()
   })
   document.body.appendChild(mask)
-  document.body.classList.add('summary-open')
   summaryEl = mask
+  syncBodyLock()
 }
 
 function closeSummary(): void {
   summaryEl?.remove()
   summaryEl = null
-  document.body.classList.remove('summary-open')
+  syncBodyLock()
+}
+
+/** 两种弹层都在 body 上，滚动锁由「是否还有弹层开着」统一决定。 */
+function syncBodyLock(): void {
+  document.body.classList.toggle('summary-open', !!(summaryEl || tradeEl))
 }
 
 /** 结束本局并落一条训练记录；复盘 / 换股 / 重新训练三个出口共用，避免重复计数。 */
@@ -292,6 +301,211 @@ async function handleSummaryAction(action: string): Promise<void> {
     view = 'train'
     render()
     toast('已重新训练本股，回到第 1 天')
+  }
+}
+
+// ---- 买入 / 卖出下单弹窗 --------------------------------------------
+
+const BUY_RATIOS: [string, number][] = [
+  ['全仓', 1], ['1/10仓', 0.1], ['1/5仓', 0.2], ['1/2仓', 0.5], ['1/3仓', 1 / 3],
+]
+const SELL_RATIOS: [string, number][] = [
+  ['全仓', 1], ['1/2仓', 0.5], ['1/3仓', 1 / 3], ['1/4仓', 0.25], ['2/3仓', 2 / 3],
+]
+
+function tradeMax(e: ReplayEngine, side: 'buy' | 'sell'): number {
+  return side === 'buy' ? e.maxBuyable() : e.availableShares
+}
+
+/** 按当前局实际生效的费率预估这笔委托的费用（费率可自定义、下一局生效）。 */
+function estimateFee(e: ReplayEngine, side: 'buy' | 'sell', shares: number): number {
+  const schedule: FeeSchedule = { ...loadFeeSchedule() }
+  schedule[e.instrumentKind] = e.feeRule
+  return computeFees(Math.max(0, shares) * e.currentPrice, side, e.instrumentKind, schedule).total
+}
+
+function tradeSheet(e: ReplayEngine, side: 'buy' | 'sell'): string {
+  const buy = side === 'buy'
+  const lot = e.config.lotSize
+  const max = tradeMax(e, side)
+  const shares = Math.min(max, lot)
+  const price = e.currentPrice
+  const chgCls = e.dayChangePct >= 0 ? 'up' : 'down'
+  const ratios = buy ? BUY_RATIOS : SELL_RATIOS
+  return `<div class="trade-sheet" role="dialog" aria-modal="true" aria-labelledby="trade-title">
+    <div class="trade-head">
+      <h2 id="trade-title">${buy ? '买入' : '卖出'}股票</h2>
+      <button class="summary-close" data-trade="close" aria-label="关闭">×</button>
+    </div>
+    <p class="trade-chg ${chgCls}">${pct(e.dayChangePct)}</p>
+    <div class="trade-row">
+      <label>${buy ? '买入' : '卖出'}价格</label>
+      <div class="trade-stepper readonly">
+        <button disabled aria-label="价格不可调">−</button>
+        <span class="trade-value">${price.toFixed(2)}</span>
+        <button disabled aria-label="价格不可调">+</button>
+        <button class="trade-help" data-trade="help" aria-label="成交价说明">?</button>
+      </div>
+    </div>
+    <p class="trade-funds">资金:${nf.format(e.cashValue)} 费用:<span id="trade-fee">0.00</span>
+      <button class="link" data-trade="fee">修改费率</button></p>
+    <div class="trade-row">
+      <label>${buy ? '买入' : '卖出'}股数</label>
+      <div class="trade-stepper">
+        <button data-trade="minus" aria-label="减一手">−</button>
+        <input id="trade-shares" type="number" inputmode="numeric" step="${lot}" min="0"
+          max="${max}" value="${shares}" aria-label="委托股数" />
+        <button data-trade="plus" aria-label="加一手">+</button>
+      </div>
+    </div>
+    <div class="trade-ratios">
+      ${ratios.map(([label, ratio]) =>
+        `<button data-trade="ratio" data-value="${ratio}">${label}</button>`).join('')}
+    </div>
+    <p class="trade-hint" id="trade-hint"></p>
+    <p class="trade-error" id="trade-error" hidden></p>
+    <div class="trade-actions">
+      <button data-trade="cancel">取消</button>
+      <button class="trade-submit" data-trade="submit">${buy ? '买入' : '卖出'}</button>
+    </div>
+  </div>`
+}
+
+/** 股数变化时只改文字，不重建输入节点，避免正在输入时失去焦点。 */
+function refreshTradeDialog(): void {
+  if (!tradeEl || !engine) return
+  const input = tradeEl.querySelector<HTMLInputElement>('#trade-shares')
+  const fee = tradeEl.querySelector<HTMLElement>('#trade-fee')
+  const hint = tradeEl.querySelector<HTMLElement>('#trade-hint')
+  if (!input || !fee || !hint) return
+  const shares = Math.max(0, Math.floor(Number(input.value) || 0))
+  const buy = tradeSide === 'buy'
+  const price = engine.currentPrice
+  const max = tradeMax(engine, tradeSide)
+  // 0 股不算委托，不能把「单笔最低佣金」显示成一笔费用
+  if (shares <= 0) {
+    fee.textContent = '0.00'
+    hint.textContent = buy
+      ? `可用 ${money(engine.cashValue)} · 最多可买 ${nf.format(max)} 股 · 按当日收盘价成交`
+      : `当前没有可卖持仓 · 最多可卖 0 股 · 按当日收盘价成交`
+    return
+  }
+  const amount = shares * price
+  const cost = estimateFee(engine, tradeSide, shares)
+  fee.textContent = cost.toFixed(2)
+  hint.textContent = buy
+    ? `预计花费 ${money(round2(amount + cost))}（含费）· 最多可买 ${nf.format(max)} 股 · 按当日收盘价成交`
+    : `预计收回 ${money(round2(amount - cost))}（扣费）· 可卖 ${nf.format(max)} 股`
+      + (engine.lockedShareCount > 0 ? ` · T+1 锁定 ${nf.format(engine.lockedShareCount)} 股` : '')
+      + ' · 按当日收盘价成交'
+}
+
+function setTradeError(text: string): void {
+  const node = tradeEl?.querySelector<HTMLElement>('#trade-error')
+  if (!node) return
+  node.textContent = text
+  node.hidden = !text
+}
+
+function openTradeDialog(side: 'buy' | 'sell'): void {
+  if (!engine || tradeEl || summaryEl) return
+  if (engine.isEnded) {
+    toast('本局已结束，点「结束训练」看总结或换股')
+    return
+  }
+  stopAutoPlay()
+  tradeSide = side
+  const mask = document.createElement('div')
+  mask.className = 'trade-mask'
+  mask.id = 'trade-mask'
+  mask.innerHTML = tradeSheet(engine, side)
+  mask.addEventListener('click', (event) => {
+    const target = (event.target as HTMLElement).closest<HTMLElement>('[data-trade]')
+    if (target) {
+      void handleTradeAction(target.dataset.trade ?? '', target.dataset.value ?? '')
+      return
+    }
+    if (event.target === mask) closeTradeDialog()
+  })
+  mask.addEventListener('input', (event) => {
+    if ((event.target as HTMLElement).id !== 'trade-shares') return
+    setTradeError('')
+    refreshTradeDialog()
+  })
+  mask.addEventListener('change', (event) => {
+    if ((event.target as HTMLElement).id !== 'trade-shares') return
+    const input = event.target as HTMLInputElement
+    const lot = engine?.config.lotSize ?? 100
+    const max = engine ? tradeMax(engine, tradeSide) : 0
+    const q = Math.max(0, Math.min(max, Math.floor((Number(input.value) || 0) / lot) * lot))
+    input.value = String(q)
+    refreshTradeDialog()
+  })
+  document.body.appendChild(mask)
+  tradeEl = mask
+  syncBodyLock()
+  refreshTradeDialog()
+}
+
+function closeTradeDialog(): void {
+  tradeEl?.remove()
+  tradeEl = null
+  syncBodyLock()
+}
+
+async function handleTradeAction(action: string, value: string): Promise<void> {
+  if (action === 'close' || action === 'cancel') {
+    closeTradeDialog()
+    return
+  }
+  if (!tradeEl || !engine) return
+  const e = engine
+  const input = tradeEl.querySelector<HTMLInputElement>('#trade-shares')
+  if (action === 'help') {
+    toast('训练按当日收盘价成交，价格仅供核对；股数可自己调或点仓位快捷按钮')
+    return
+  }
+  if (action === 'fee') {
+    closeTradeDialog()
+    view = 'records'
+    render()
+    document.getElementById('fee-form')?.scrollIntoView({ behavior: 'smooth', block: 'center' })
+    return
+  }
+  if (action === 'minus' || action === 'plus' || action === 'ratio') {
+    if (!input) return
+    const lot = e.config.lotSize
+    const max = tradeMax(e, tradeSide)
+    const current = Math.floor((Number(input.value) || 0) / lot) * lot
+    const next = action === 'ratio'
+      ? Math.floor((max * Number(value)) / lot) * lot
+      : current + (action === 'plus' ? lot : -lot)
+    input.value = String(Math.max(0, Math.min(max, next)))
+    setTradeError('')
+    refreshTradeDialog()
+    return
+  }
+  if (action === 'submit') {
+    const lot = e.config.lotSize
+    const max = tradeMax(e, tradeSide)
+    const qty = Math.max(0, Math.min(
+      max,
+      Math.floor((Number(input?.value ?? 0) || 0) / lot) * lot,
+    ))
+    if (qty <= 0) {
+      setTradeError(tradeSide === 'buy' ? '可用资金不足或股数不足一手' : '没有可卖持仓或股数不足一手')
+      return
+    }
+    const price = e.currentPrice
+    const res = tradeSide === 'buy' ? e.buy(qty) : e.sell(qty)
+    if (res.ok) {
+      closeTradeDialog()
+      updateTrainUI()
+      toast(`已${tradeSide === 'buy' ? '买入' : '卖出'} ${qty} 股 @ ${price.toFixed(2)}`)
+    } else {
+      setTradeError(res.reason ?? '操作失败')
+      updateTrainUI()
+    }
   }
 }
 
@@ -1024,6 +1238,7 @@ function startGame(game?: Game): void {
   draft = null
   endSummaryShown = false
   closeSummary()
+  closeTradeDialog()
 }
 
 function switchWindow(key: PeriodKey): void {
@@ -1276,13 +1491,13 @@ async function handle(action: string, target: HTMLElement): Promise<void> {
       chartView?.clearDrawings()
       return
     case 'buy':
-      applyTrade(engine?.buy(100))
+      openTradeDialog('buy')
       return
     case 'buyAll':
       applyTrade(engine ? engine.buy(engine.maxBuyable()) : undefined)
       return
     case 'sell':
-      applyTrade(engine?.sell(100))
+      openTradeDialog('sell')
       return
     case 'sellAll':
       applyTrade(engine ? engine.sell(engine.availableShares) : undefined)
@@ -1542,9 +1757,11 @@ document.addEventListener('change', (event) => {
   input.value = ''
 })
 
-// 总结弹层可以用 Esc / 点遮罩关掉：中途点错「换股」还能继续这一局
+// 弹层可以用 Esc / 点遮罩关掉：中途点错「换股」或误点买卖还能继续这一局
 document.addEventListener('keydown', (event) => {
-  if (event.key === 'Escape' && summaryEl) closeSummary()
+  if (event.key !== 'Escape') return
+  if (tradeEl) closeTradeDialog()
+  else if (summaryEl) closeSummary()
 })
 
 window.addEventListener('resize', () => chartView?.resize())

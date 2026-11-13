@@ -1419,7 +1419,8 @@ h1 {
 /* ---- 结束训练总结（底部弹层，参考同花顺「结束训练」） ---- */
 body.summary-open { overflow: hidden; }
 
-.summary-mask {
+.summary-mask,
+.trade-mask {
   position: fixed;
   inset: 0;
   z-index: 2000;
@@ -1431,7 +1432,8 @@ body.summary-open { overflow: hidden; }
   animation: summary-fade 0.18s ease-out;
 }
 
-.summary-sheet {
+.summary-sheet,
+.trade-sheet {
   width: 100%;
   max-width: 520px;
   padding: 16px 20px calc(20px + env(safe-area-inset-bottom));
@@ -1564,3 +1566,164 @@ body.summary-open { overflow: hidden; }
   from { transform: translateY(24px); opacity: 0.6; }
   to { transform: translateY(0); opacity: 1; }
 }
+
+/* ---- 买入 / 卖出下单弹窗 ---- */
+.trade-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding-bottom: 12px;
+  border-bottom: 1px solid var(--line);
+}
+
+.trade-head h2 { margin: 0; font-size: 17px; font-weight: 600; }
+
+.trade-chg {
+  margin: 14px 0 16px;
+  text-align: center;
+  font-size: 15px;
+  font-variant-numeric: tabular-nums;
+}
+
+.trade-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin-top: 6px;
+}
+
+.trade-row > label { flex: 0 0 auto; font-size: 15px; font-weight: 600; white-space: nowrap; }
+
+.trade-stepper {
+  display: flex;
+  align-items: center;
+  height: 40px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--bg);
+  overflow: hidden;
+}
+
+.trade-stepper button {
+  width: 38px;
+  height: 100%;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--accent);
+  font-family: inherit;
+  font-size: 20px;
+  line-height: 1;
+  cursor: pointer;
+  touch-action: manipulation;
+}
+
+.trade-stepper button:disabled { color: var(--muted); opacity: 0.45; cursor: default; }
+.trade-stepper button:active:not(:disabled) { background: rgba(110, 168, 254, 0.16); }
+
+.trade-value,
+.trade-stepper input {
+  width: 82px;
+  text-align: center;
+  font-size: 16px;
+  font-variant-numeric: tabular-nums;
+}
+
+.trade-stepper input {
+  height: 100%;
+  border: 0;
+  outline: 0;
+  background: transparent;
+  color: var(--text);
+  font-family: inherit;
+  appearance: textfield;
+}
+
+.trade-stepper input::-webkit-outer-spin-button,
+.trade-stepper input::-webkit-inner-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+
+.trade-stepper.readonly .trade-value { color: var(--muted); }
+
+.trade-stepper .trade-help {
+  width: 24px;
+  height: 24px;
+  margin: 0 7px 0 3px;
+  border: 1px solid var(--accent);
+  border-radius: 50%;
+  color: var(--accent);
+  font-size: 13px;
+  opacity: 1;
+}
+
+.trade-funds {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 5px;
+  margin: 7px 0 14px;
+  color: var(--muted);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+}
+
+.trade-funds .link { margin-left: 6px; font-size: 12px; }
+
+.trade-ratios {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 6px;
+  margin-top: 14px;
+}
+
+.trade-ratios button {
+  min-height: 34px;
+  padding: 0 2px;
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  background: transparent;
+  color: var(--text);
+  font-family: inherit;
+  font-size: 11px;
+  white-space: nowrap;
+  cursor: pointer;
+  touch-action: manipulation;
+}
+
+.trade-ratios button:active { background: var(--bg); }
+
+.trade-hint {
+  margin: 12px 0 0;
+  color: var(--muted);
+  font-size: 11px;
+  line-height: 1.55;
+  font-variant-numeric: tabular-nums;
+}
+
+.trade-error { margin: 8px 0 0; color: var(--up); font-size: 12px; }
+
+.trade-actions {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 14px;
+  margin-top: 16px;
+}
+
+.trade-actions button {
+  min-height: 44px;
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  background: transparent;
+  color: var(--text);
+  font-family: inherit;
+  font-size: 15px;
+  cursor: pointer;
+  touch-action: manipulation;
+}
+
+.trade-actions .trade-submit { border-color: var(--accent); color: var(--accent); }
+.trade-actions button:active { background: var(--bg); }
