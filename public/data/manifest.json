@@ -1,10 +1,10 @@
 {
-  "version": 5,
-  "generatedAt": "2026-11-12T17:48:33+00:00",
+  "version": 6,
+  "generatedAt": "2026-11-13T00:20:53+00:00",
   "source": "baostock 前复权日线（2015 起完整历史） + 新浪 5 分钟线 + 腾讯股本快照",
   "adjust": "前复权，逐日按收盘价对齐",
-  "dataFile": "sessions-2ac3d55e6b.json",
-  "bytes": 3150424,
+  "dataFile": "sessions-ec2f99827a.json",
+  "bytes": 3150407,
   "symbols": 18,
   "games": 288,
   "historyBars": 46693,
@@ -19,28 +19,28 @@
       "key": "m5",
       "label": "分时",
       "visible": 60,
-      "advance": 720,
-      "note": "当日价格线 + 均价线，5 分钟粒度，公开源最细"
+      "advance": 15,
+      "note": "当日完整分时：价格线 + 均价线，一次推进一整天"
     },
     {
       "key": "day",
       "label": "日K",
       "visible": 60,
-      "advance": 720,
-      "note": "带 2015 年起完整历史；当日 K 由已揭示分钟线合成"
+      "advance": 15,
+      "note": "带 2015 年起完整历史；当日 K 由完整日内分钟线合成"
     },
     {
       "key": "week",
       "label": "周K",
       "visible": 40,
-      "advance": 720,
+      "advance": 15,
       "note": "由日线按自然周聚合，当前周由已揭示数据合成"
     },
     {
       "key": "month",
       "label": "月K",
       "visible": 24,
-      "advance": 720,
+      "advance": 15,
       "note": "由日线按自然月聚合，当前月由已揭示数据合成"
     }
   ],
@@ -49,28 +49,28 @@
       "key": "m5",
       "label": "分时",
       "visible": 60,
-      "advance": 720,
-      "note": "当日价格线 + 均价线，5 分钟粒度，公开源最细"
+      "advance": 15,
+      "note": "当日完整分时：价格线 + 均价线，一次推进一整天"
     },
     {
       "key": "day",
       "label": "日K",
       "visible": 60,
-      "advance": 720,
-      "note": "带 2015 年起完整历史；当日 K 由已揭示分钟线合成"
+      "advance": 15,
+      "note": "带 2015 年起完整历史；当日 K 由完整日内分钟线合成"
     },
     {
       "key": "week",
       "label": "周K",
       "visible": 40,
-      "advance": 720,
+      "advance": 15,
       "note": "由日线按自然周聚合，当前周由已揭示数据合成"
     },
     {
       "key": "month",
       "label": "月K",
       "visible": 24,
-      "advance": 720,
+      "advance": 15,
       "note": "由日线按自然月聚合，当前月由已揭示数据合成"
     }
   ]

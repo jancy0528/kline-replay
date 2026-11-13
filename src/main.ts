@@ -156,6 +156,13 @@ function header(active: View): string {
   </header>`
 }
 
+/** 推进按钮按当前窗口命名：一次推进就是那个周期的一根完整 K。 */
+function nextLabel(key: PeriodKey): string {
+  if (key === 'week') return '下一周'
+  if (key === 'month') return '下一月'
+  return '下一天'
+}
+
 /** 周期栏：分时 / 日K / 周K / 月K，紧贴图表上方，选中态为红色下划线。 */
 function windowBar(e: ReplayEngine): string {
   const items = sessions?.windows ?? []
@@ -308,7 +315,7 @@ function renderTrades(trades: Trade[]): string {
         <div class="trade-main">
           <span class="tag ${t.side}">${t.side === 'buy' ? '买' : '卖'}</span>
           ${t.source === 'order' ? '<span class="tag order">条件</span>' : ''}
-          <span>第 ${t.index + 1} 步</span>
+          <span>第 ${t.index + 1} 天</span>
           <span>${t.shares} 股 @ ${t.price.toFixed(3)}</span>
           ${pnl}
         </div>
@@ -351,17 +358,17 @@ function renderTrain(): void {
       </div>
       ${chartTools(intraday)}
       <div id="history-wrap">${historyBar(e.historyPosition())}</div>
-      <p class="blind-note">股票名称与日期已隐藏 · 只能看到已推进的 K 线 · 四个窗口是同一局同一只股票</p>
+      <p class="blind-note">股票名称与日期已隐藏 · 每次推进一个完整交易日，分时整屏换一天 · 四个窗口是同一局同一只股票</p>
       <section class="stats">
         <div><span>可用资金</span><b id="s-cash">${money(e.cashValue)}</b></div>
         <div><span>持仓</span><b id="s-shares">${e.shareCount} 股</b></div>
         <div><span>浮动盈亏</span><b id="s-profit" class="${e.profit >= 0 ? 'up' : 'down'}">${pct(e.profitPct)}</b></div>
-        <div><span>本局进度</span><b id="s-progress">${e.index + 1} / ${e.total}</b></div>
+        <div><span>本局进度</span><b id="s-progress">第 ${e.index + 1} / ${e.total} 天</b></div>
       </section>
       <p class="fee-note" id="fee-note">${feeNote(e)}</p>
       <section class="controls">
         <div class="btn-row">
-          <button class="btn primary" data-action="next">下一根 →</button>
+          <button class="btn primary" data-action="next">${nextLabel(e.currentView)} →</button>
           <button class="btn" data-action="auto" id="auto-btn">${autoPlaying ? '暂停 ⏸' : '自动播放 ▶'}</button>
         </div>
         <div class="btn-row">
@@ -903,7 +910,7 @@ function updateTrainUI(): void {
   set('s-cash', money(engine.cashValue))
   set('s-shares', `${engine.shareCount} 股`)
   set('s-profit', pct(engine.profitPct), engine.profit >= 0 ? 'up' : 'down')
-  set('s-progress', `${engine.index + 1} / ${engine.total}`)
+  set('s-progress', `第 ${engine.index + 1} / ${engine.total} 天`)
   set('s-fees', yuan2(engine.totalFees.total))
   const list = document.getElementById('trade-list')
   if (list) list.innerHTML = renderTrades(engine.tradeList)

@@ -235,10 +235,11 @@ function aggregateCandles(days: Candle[], unit: 'week' | 'month'): Candle[] {
 /**
  * 回放引擎：唯一持有完整一局历史的地方。
  *
- * 一局 = 一只标的 + 一个 5 分钟序列上的时间游标。「分时」和「日线」
- * 是同一段行情的两种视图，切换视图只改变 visible() 的聚合方式，
- * 资金、持仓、条件单、时间游标全部不动。日线视图里「当日」那根 K
- * 由当天截至游标的分钟 K 合成，绝不把整日 OHLC 提前暴露出去。
+ * 一局 = 一只标的 + 一个 5 分钟序列上的时间游标，但**推进单位是完整
+ * 交易日**：开局游标停在起始日收盘，每次推进落到下一个日末。四窗口
+ * 是同一段行情的四种视图，切换只改变 visible() 的聚合方式，资金、
+ * 持仓、条件单、时间游标全部不动。当前交易日及其之前的完整 OHLC /
+ * 分时都属于已知信息，之后的交易日绝不提前暴露。
  */
 export class ReplayEngine {
   private readonly minBars: Bar[]
@@ -246,6 +247,8 @@ export class ReplayEngine {
   private readonly fund: Fundamentals | null
   private readonly start: number
   private readonly end: number
+  /** [start, end] 内每个完整交易日的最后一根 5 分钟 K，用于按天算进度。 */
+  private readonly dayEnds: number[]
   private now: number
   private view: PeriodKey
   private label: string
@@ -280,7 +283,18 @@ export class ReplayEngine {
     this.fund = symbol.fundamentals ?? null
     this.start = game.s
     this.end = game.e
-    this.now = game.s
+    // 训练按「日」决策：开局就把起始日走完，停在该日最后一根 5 分钟 K。
+    // 这样切到分时看到的是那天完整的一整天，而不是只有一个点；此后每次
+    // 推进都落在下一个日末，四个窗口同步换一天。s 是日首、e 是日末，
+    // 由 tools/build_sessions.py 保证。
+    const ends: number[] = []
+    for (let i = this.start; i <= this.end; i += 1) {
+      if (i === this.end || dayOf(this.minBars[i + 1][0]) !== dayOf(this.minBars[i][0])) {
+        ends.push(i)
+      }
+    }
+    this.dayEnds = ends
+    this.now = this.dayEnds[0] ?? game.s
     this.view = config.view
     this.label = config.viewLabel
     this.config = config
@@ -628,16 +642,21 @@ export class ReplayEngine {
   }
 
   /**
-   * 进度按统一的时间游标算（已推进的 5 分钟 K 根数），与图表里画了多少根
-   * 历史 K 线脱钩：日线视图带 2015 年起的完整历史，若按 K 线数算会一开局
-   * 就显示「2786 / 2801」，看起来像快结束了；切换窗口也不该让进度跳变。
+   * 进度按「已完成的交易日」算，与图表里画了多少根历史 K 线脱钩：
+   * 日线视图带 2015 年起的完整历史，按 K 线数算会一开局就显示
+   * 「2786 / 2801」；切换窗口也不该让进度跳变。index 是 0 基天序号，
+   * total 是本局总交易日数，界面显示「第 index+1 / total 天」。
    */
   get index(): number {
-    return this.now - this.start
+    let done = 0
+    for (const end of this.dayEnds) {
+      if (end <= this.now) done += 1
+    }
+    return Math.max(0, done - 1)
   }
 
   get total(): number {
-    return this.end - this.start
+    return Math.max(1, this.dayEnds.length)
   }
 
   get orderList(): ConditionalOrder[] {
@@ -693,11 +712,11 @@ export class ReplayEngine {
 
   advance(): boolean {
     if (this.ended) return false
-    const target = this.view === 'm5'
-      ? Math.min(this.now + 1, this.end)
-      : this.view === 'day'
-        ? this.nextDayCursor()
-        : this.nextPeriodCursor(this.view)
+    // 分时和日K 都是「一天一根」：分时一次换出完整一天，日K 多一根完整日线。
+    // 周/月视图沿用各自周期。条件单始终在下面按 5 分钟 K 逐根判定。
+    const target = this.view === 'week' || this.view === 'month'
+      ? this.nextPeriodCursor(this.view)
+      : this.nextDayCursor()
 
     for (let i = this.now + 1; i <= target; i += 1) {
       const bar = this.minBars[i]

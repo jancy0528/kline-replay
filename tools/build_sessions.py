@@ -46,18 +46,20 @@ MINUTE_FILE = RAW / "minutes.json"
 SELECTION_FILE = RAW / "selection.json"
 FUND_FILE = RAW / "fundamentals.json"
 
-# advance 是一局最多推进的 5 分钟 K 根数（720 根 ≈ 15 个交易日）。
+# advance 是一局的交易日数：训练按「日」决策，每次推进给完整一天，
+# 分时整屏换一天，日K 多一根；周/月视图沿用各自的周期推进。
 WINDOWS = [
-    {"key": "m5", "label": "分时", "visible": 60, "advance": 720,
-     "note": "当日价格线 + 均价线，5 分钟粒度，公开源最细"},
-    {"key": "day", "label": "日K", "visible": 60, "advance": 720,
-     "note": "带 2015 年起完整历史；当日 K 由已揭示分钟线合成"},
-    {"key": "week", "label": "周K", "visible": 40, "advance": 720,
+    {"key": "m5", "label": "分时", "visible": 60, "advance": 15,
+     "note": "当日完整分时：价格线 + 均价线，一次推进一整天"},
+    {"key": "day", "label": "日K", "visible": 60, "advance": 15,
+     "note": "带 2015 年起完整历史；当日 K 由完整日内分钟线合成"},
+    {"key": "week", "label": "周K", "visible": 40, "advance": 15,
      "note": "由日线按自然周聚合，当前周由已揭示数据合成"},
-    {"key": "month", "label": "月K", "visible": 24, "advance": 720,
+    {"key": "month", "label": "月K", "visible": 24, "advance": 15,
      "note": "由日线按自然月聚合，当前月由已揭示数据合成"},
 ]
-ADVANCE = WINDOWS[0]["advance"]
+ADVANCE_DAYS = WINDOWS[0]["advance"]
+MIN_GAME_DAYS = 12         # 少于 12 个完整交易日的局不生成（按天推进太短）
 MIN_MINUTE_BARS = 300      # 低于该根数的标的不足以成局
 LEAD_DAYS = (1, 5)         # 开局压在信号日前 1~5 个交易日，且落在日首
 
@@ -126,7 +128,12 @@ def align_symbol(code: str, daily: list[list], minutes: list[list]) -> dict | No
 
 def make_games(symbols: dict, signals: dict[str, list[str]],
                per_symbol: int, rng: random.Random) -> list[dict]:
-    """每局锚定一个真实信号日：起点在信号日前，终点尽量到分时数据末尾。"""
+    """每局锚定一个真实信号日；s 是起始日日首，e 必须是完整交易日的日末。
+
+    训练以「交易日」为单位：引擎开局把起始日走完并停在该日收盘，之后
+    每次推进恰好落到下一个日末，分时一次给一整天。因此终点不能落在
+    某天中间的 5 分钟 K 上，否则最后一天会退化成只有几个点的残图。
+    """
     games: list[dict] = []
     for code, data in symbols.items():
         m5 = data["m5"]
@@ -134,34 +141,43 @@ def make_games(symbols: dict, signals: dict[str, list[str]],
         dates = [str(b[0])[:10] for b in m5]
         days = sorted(set(dates))
         day_first: dict[str, int] = {}
+        day_last: dict[str, int] = {}
         for i, d in enumerate(dates):
             day_first.setdefault(d, i)
+            day_last[d] = i
         # 信号日若落在分时窗口第一天（只有半天数据、无法做开局锚点），
         # 不能拿来生成局，否则信号会落在起点之前而没被 K 线覆盖。
         valid = [d for d in signals.get(code, [])
                  if d in day_first and days.index(d) >= 1]
+        # 新浪 1023 根窗口的第一天只有下午半天（13:50 起），不能拿来开局。
         if not valid:
-            # 没有可用信号日的标的仍可成局，但不宣称含信号；起点同样落日首
+            # 没有可用信号日的标的仍可成局，但不宣称含信号
+            hi = max(1, len(days) - 1 - ADVANCE_DAYS)
             for _ in range(per_symbol):
-                day = rng.choice(days[1:-1]) if len(days) > 2 else days[-1]
-                s = day_first[day]
-                e = min(n - 1, s + ADVANCE)
+                di = rng.randint(1, hi)
+                s = day_first[days[di]]
+                e = day_last[days[min(di + ADVANCE_DAYS, len(days) - 1)]]
                 if e > s:
                     games.append({"c": code, "s": s, "e": e})
             continue
-        for _ in range(per_symbol):
+        # 起点若太靠近分时窗口末尾，终点会被截在最后一个交易日，
+        # 按天推进两三下就结束。重抽到跨度足够的一局为止。
+        made = 0
+        tries = 0
+        while made < per_symbol and tries < per_symbol * 20:
+            tries += 1
             signal = rng.choice(valid)
             sig_day_idx = days.index(signal)
-            # 起点必须落在某个交易日的第一根 5 分钟 K 上，否则「当日分时/
-            # 成交额」会把开局前那半天也算进去。另外新浪 1023 根窗口的
-            # 第一天只有下午半天（13:50 起），不能拿来开局，故下界取 1。
             lead_days = rng.randint(*LEAD_DAYS)
-            start_day = days[max(1, sig_day_idx - lead_days)]
-            s = day_first[start_day]   # 可以是 0：那才是当天第一根
-            e = min(n - 1, s + ADVANCE)
-            if e <= s or s >= n - 2:
+            start_idx = max(1, sig_day_idx - lead_days)
+            end_idx = min(start_idx + ADVANCE_DAYS, len(days) - 1)
+            if end_idx - start_idx + 1 < MIN_GAME_DAYS:
                 continue
-            games.append({"c": code, "s": s, "e": e, "signal": signal})
+            s = day_first[days[start_idx]]   # 可以是 0：那才是当天第一根
+            e = day_last[days[end_idx]]
+            if e > s and s < n - 2:
+                games.append({"c": code, "s": s, "e": e, "signal": signal})
+                made += 1
     rng.shuffle(games)
     return games
 
@@ -208,7 +224,7 @@ def main() -> int:
         raise SystemExit("对局包里没有任何一局包含选股信号，已中止；不生成无意义数据")
     history_bars = sum(len(v["day"]) for v in symbols.values())
     body = {
-        "version": 5,
+        "version": 6,
         "windows": WINDOWS,
         "symbols": symbols,
         "games": games,
@@ -219,7 +235,7 @@ def main() -> int:
     (OUT_DIR / filename).write_bytes(raw)
 
     manifest = {
-        "version": 5,
+        "version": 6,
         "generatedAt": datetime.now(timezone.utc).isoformat(timespec="seconds"),
         "source": "baostock 前复权日线（2015 起完整历史） + 新浪 5 分钟线 + 腾讯股本快照",
         "adjust": "前复权，逐日按收盘价对齐",
