@@ -64,6 +64,9 @@ export interface DataManifest {
   games: number
   /** 完整日线总根数，仅用于展示/校验，前端不依赖它做逻辑 */
   historyBars?: number
+  /** 当前生效的选股模式与公式，只用于「更多操作」里查验，不参与训练逻辑 */
+  selectionMode?: string
+  selectionFormula?: string
   /** 选股命中数与信号日数，只用于展示 */
   selection?: { symbols: number; signals: number; scanned: number }
   windows: WindowMeta[]

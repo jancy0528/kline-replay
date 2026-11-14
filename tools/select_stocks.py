@@ -1,7 +1,17 @@
 #!/usr/bin/env python3
-"""按用户给定的三层规则，从全 A 股筛出训练标的与「信号日」。
+"""从全 A 股筛出训练标的与「信号日」。
 
-规则（原文见对话 2026-11-13）：
+当前生效模式：`bottom3x`（底部三倍量，2026-11-14 用户指定）
+    {底部三倍量 选股}
+    三倍量:=V>=REF(V,1)*3;
+    {底部：收盘价在60日最低价上方15%区间内，你可以自行修改60、0.15}
+    底部:=C<=LLV(L,60)*1.15;
+    {要求收阳线，过滤长上影诱多}
+    阳线:=C>O;
+    XG:三倍量 AND 底部 AND 阳线;
+  日线字段（腾讯 fqkline）：[date, open, close, high, low, volume]
+
+已停用但完整保留：`legacy`（三层规则，原文见对话 2026-11-13）
 一、基础池过滤（最先执行）
   1 剔除 ST / *ST / 退市风险警示
   2 剔除当日连板个股
@@ -15,6 +25,7 @@
 三、核心技术条件（周线级别）
   周 K 收盘价计算 MA5/MA10/MA20，硬性要求 MA5 > MA10 > MA20，
   仅比较数值大小，不强制发散角度、允许小幅粘合。
+  用 `python tools/select_stocks.py --mode legacy` 可重新启用（代码未删除）。
 
 数据源：
   BaoStock query_all_stock  仅用于取一次「全市场代码 + 名称」清单（缓存）
@@ -42,7 +53,17 @@ import time
 import urllib.request
 from pathlib import Path
 
-# ---- 可推翻的口径常量 ----------------------------------------------------
+# ---- 生效模式 ------------------------------------------------------------
+# bottom3x = 底部三倍量（当前生效）；legacy = 三层规则（代码保留、默认停用）
+MODE = 'bottom3x'
+VALID_MODES = ('bottom3x', 'legacy')
+
+# ---- 新公式参数：底部三倍量 -----------------------------------------------
+VOLUME_MULTIPLE = 3.0        # 三倍量：V >= REF(V,1) * 3
+BOTTOM_LOOKBACK = 60         # LLV(L,60)：含当日的 60 根日线最低价
+BOTTOM_BUFFER = 0.15         # 底部区间：C <= LLV(L,60) * (1 + 0.15)
+
+# ---- 旧模式参数（legacy 专用，保留以便随时切回）---------------------------
 MIN_FLOAT_MV_YI = 50.0          # 流通市值下限（亿元）
 MIN_AVG_AMOUNT_YI = 1.0         # 近 10 日日均成交额下限（亿元）
 VOLUME_RATIO_MIN = 2.5          # 放量倍数下限
@@ -174,8 +195,8 @@ def build_snapshot(universe: list[list[str]], force: bool) -> dict[str, dict]:
     return result
 
 
-def basic_filter(code: str, q: dict) -> tuple[bool, str]:
-    """一、基础池过滤。返回 (是否通过, 淘汰原因)。"""
+def basic_filter_legacy(code: str, q: dict) -> tuple[bool, str]:
+    """【已停用·代码保留】旧模式一、基础池过滤。返回 (是否通过, 淘汰原因)。"""
     name = q.get('name', '').upper()
     if 'ST' in name or '退' in name:
         return False, 'ST/退市'
@@ -187,6 +208,26 @@ def basic_filter(code: str, q: dict) -> tuple[bool, str]:
     if q.get('amountWan', 0) / 1e4 < VOLUME_RATIO_MIN * MIN_AVG_AMOUNT_YI:
         return False, '当日成交额不足'
     return True, ''
+
+
+def basic_filter_bottom3x(code: str, q: dict) -> tuple[bool, str]:
+    """新公式模式：不做任何选股过滤，只排除无法取数的无效快照。
+
+    原公式里没有 ST / 市值 / 一手成本 / 连板 / 成交额门槛，忠实照抄即
+    意味着这些条件全部不生效；仅保留「有名称、有价格、有当日成交」这类
+    数据有效性检查，避免把退市无行情代码送进日线接口。
+    """
+    if not q.get('name'):
+        return False, '无名称'
+    if q.get('price', 0) <= 0 or q.get('amountWan', 0) <= 0:
+        return False, '无有效行情'
+    return True, ''
+
+
+def basic_filter(code: str, q: dict, mode: str) -> tuple[bool, str]:
+    if mode == 'legacy':
+        return basic_filter_legacy(code, q)
+    return basic_filter_bottom3x(code, q)
 
 
 # ---- 3. 前复权日线 --------------------------------------------------------
@@ -241,8 +282,8 @@ def daily_amount(daily: list[list], i: int) -> float:
     return r[5] * r[2]
 
 
-def signal_at(code: str, daily: list[list], i: int, scale: float) -> dict | None:
-    """检查第 i 根日线是否是满足全部条件的信号日。scale 把相对额换成亿元。"""
+def signal_at_legacy(code: str, daily: list[list], i: int, scale: float) -> dict | None:
+    """【已停用·代码保留】旧模式：近 10 日均额放量 + 连板剔除 + 周线多头排列。"""
     if i < 11 or daily[i][5] <= 0:
         return None
     # 近 10 个正常成交交易日，不含当日；停牌日（量 0）不计入
@@ -276,6 +317,7 @@ def signal_at(code: str, daily: list[list], i: int, scale: float) -> dict | None
         return None
     return {
         'date': daily[i][0],
+        'mode': 'legacy',
         'volumeRatio': round(ratio, 3),
         'avgAmountYi': round(avg_yi, 3),
         'amountYi': round(daily_amount(daily, i) * scale, 3),
@@ -284,28 +326,73 @@ def signal_at(code: str, daily: list[list], i: int, scale: float) -> dict | None
     }
 
 
-def evaluate(args: tuple[str, dict]) -> dict | None:
-    code, q = args
+def signal_at_bottom3x(code: str, daily: list[list], i: int, scale: float) -> dict | None:
+    """【当前生效】底部三倍量：三倍量 AND 底部 AND 阳线。
+
+    日线为腾讯 fqkline 顺序 [date, open, close, high, low, volume]，
+    因此 O=r[1] C=r[2] H=r[3] L=r[4] V=r[5]（与 BaoStock 的 bars.ts 顺序不同）。
+    LLV(L,60) 按通达信口径含当日；「长上影」注释在原文里没有对应代码，
+    按原公式只实现 C>O，不额外过滤影线。
+    """
+    if i < BOTTOM_LOOKBACK - 1 or i < 1:
+        return None
+    r, prev = daily[i], daily[i - 1]
+    o, c, low, v = r[1], r[2], r[4], r[5]
+    v_prev = prev[5]
+    if v <= 0 or v_prev <= 0:
+        return None
+    # 1) 三倍量：V >= REF(V,1) * 3
+    if v < v_prev * VOLUME_MULTIPLE:
+        return None
+    # 2) 底部：C <= LLV(L,60) * 1.15（LLV 含当日，共 60 根）
+    lo = min(daily[j][4] for j in range(i - BOTTOM_LOOKBACK + 1, i + 1))
+    if lo <= 0 or c > lo * (1 + BOTTOM_BUFFER):
+        return None
+    # 3) 阳线：C > O
+    if not c > o:
+        return None
+    return {
+        'date': r[0],
+        'mode': 'bottom3x',
+        'volumeRatio': round(v / v_prev, 3),   # 此处含义为「对昨日量的倍数」
+        'prevVolume': v_prev,
+        'volume': v,
+        'llv60': round(lo, 3),
+        'bottomCeil': round(lo * (1 + BOTTOM_BUFFER), 3),
+        'close': c,
+        'open': o,
+        'changePct': round((c / prev[2] - 1) * 100, 2) if prev[2] > 0 else 0,
+    }
+
+
+def signal_at(code: str, daily: list[list], i: int, scale: float,
+              mode: str = MODE) -> dict | None:
+    if mode == 'legacy':
+        return signal_at_legacy(code, daily, i, scale)
+    return signal_at_bottom3x(code, daily, i, scale)
+
+
+def evaluate(args: tuple[str, dict, str]) -> dict | None:
+    code, q, mode = args
     try:
         daily = fetch_daily(code)
     except Exception as e:  # noqa: BLE001
         return {'code': code, 'error': str(e)[:80]}
-    if len(daily) < 110:
+    need = 110 if mode == 'legacy' else BOTTOM_LOOKBACK + SIGNAL_SCAN_DAYS
+    if len(daily) < need:
         return None
-    # 用「最后一根真实成交额 / 相对成交额」把比值口径换算成亿元
+    # 用「最后一根真实成交额 / 相对成交额」把比值口径换算成亿元（旧模式用）
     rel_last = daily_amount(daily, -1) if len(daily) else 0
     scale = (q['amountWan'] / 1e4) / rel_last if rel_last > 0 else 0
-    if scale <= 0:
-        return None
     signals = []
-    lo = max(0, len(daily) - SIGNAL_SCAN_DAYS)
+    lo = max(BOTTOM_LOOKBACK - 1, len(daily) - SIGNAL_SCAN_DAYS)
     for i in range(lo, len(daily)):
-        s = signal_at(code, daily, i, scale)
+        s = signal_at(code, daily, i, scale, mode)
         if s:
             signals.append(s)
     if not signals:
         return None
-    return {
+    out = {
         'code': code,
         'name': q['name'],
         'price': q['price'],
@@ -313,8 +400,67 @@ def evaluate(args: tuple[str, dict]) -> dict | None:
         'lastAmountYi': round(q['amountWan'] / 1e4, 3),
         'signals': signals,
         'dailyLast': daily[-1][0],
-        'weekMA': signals[-1]['weekMA'],
     }
+    if signals[-1].get('weekMA'):
+        out['weekMA'] = signals[-1]['weekMA']
+    return out
+
+
+def pick_pool(symbols: list[dict], n: int) -> list[str]:
+    """从命中里挑实训标的：排除 ST/退市 + 按代码板块轮转 + 同板块按信号新近/量比排序。
+
+    selection.json 保留全部命中（忠实原公式），这里只决定「哪些标的进训练包」，
+    因此排除 ST 属于训练可用性取舍，不是选股条件。
+    """
+    cand = [p for p in symbols
+            if 'ST' not in p['name'].upper() and '退' not in p['name']]
+    groups: dict[str, list[dict]] = {}
+    for p in cand:
+        groups.setdefault(p['code'].split('.')[1][:3], []).append(p)
+    for v in groups.values():
+        v.sort(key=lambda x: (x['signals'][-1]['date'],
+                              x['signals'][-1]['volumeRatio']), reverse=True)
+    out: list[str] = []
+    keys = sorted(groups)
+    while len(out) < n:
+        added = False
+        for k in keys:
+            while groups[k]:
+                p = groups[k].pop(0)
+                if p['code'] not in out:
+                    out.append(p['code'])
+                    added = True
+                    break
+            if len(out) >= n:
+                break
+        if not added:
+            break
+    return out
+
+
+def write_public_summary(out: dict) -> None:
+    """把命中摘要写到 public/ 供线上直接查验（不参与应用逻辑）。"""
+    path = ROOT / 'public' / 'selection.json'
+    path.parent.mkdir(parents=True, exist_ok=True)
+    summary = {
+        'mode': out['mode'],
+        'generatedAt': out['generatedAt'],
+        'rules': out['rules'],
+        'note': out['note'],
+        'disclaimer': '本清单仅用于 K 线回放训练的标的筛选，不构成任何投资建议或依据。',
+        'scanned': out['scanned'],
+        'symbols': len(out['symbols']),
+        'signalDays': out['signalDays'],
+        'hits': [
+            {'code': p['code'], 'name': p['name'], 'floatMvYi': p['floatMvYi'],
+             'signals': [{'date': s['date'], 'volumeRatio': s['volumeRatio'],
+                          'llv60': s.get('llv60'), 'close': s.get('close')}
+                         for s in p['signals']]}
+            for p in out['symbols']
+        ],
+    }
+    path.write_text(json.dumps(summary, ensure_ascii=False, indent=1), encoding='utf-8')
+    print(f'[summary] 线上查验清单 → {path}', flush=True)
 
 
 def main() -> None:
@@ -323,7 +469,14 @@ def main() -> None:
     ap.add_argument('--force-universe', action='store_true')
     ap.add_argument('--force-snapshot', action='store_true')
     ap.add_argument('--limit', type=int, default=0, help='只处理前 N 只，用于调试')
+    ap.add_argument('--write-picked', type=int, default=0,
+                    help='从命中里挑 N 只写入 src/data/raw/picked.json')
+    ap.add_argument('--mode', default=MODE, choices=VALID_MODES,
+                    help='bottom3x=底部三倍量（默认生效）；legacy=旧三层规则（保留但停用）')
     args = ap.parse_args()
+    mode = args.mode
+    print(f'[mode] {mode}'
+          + ('  <-- 旧三层规则代码保留但本轮不生效' if mode == 'bottom3x' else ''), flush=True)
 
     t0 = time.time()
     universe = build_universe(args.day, args.force_universe)
@@ -332,7 +485,7 @@ def main() -> None:
     candidates: list[tuple[str, dict]] = []
     rejects: dict[str, int] = {}
     for code, q in snapshot.items():
-        ok, why = basic_filter(code, q)
+        ok, why = basic_filter(code, q, mode)
         if ok:
             candidates.append((code, q))
         else:
@@ -343,8 +496,9 @@ def main() -> None:
 
     picked: list[dict] = []
     errors = 0
+    tasks = [(c, q, mode) for c, q in candidates]
     with futures.ThreadPoolExecutor(max_workers=DAILY_WORKERS) as pool:
-        for n, res in enumerate(pool.map(evaluate, candidates), 1):
+        for n, res in enumerate(pool.map(evaluate, tasks), 1):
             if res and 'error' in res:
                 errors += 1
             elif res:
@@ -352,31 +506,58 @@ def main() -> None:
             if n % 300 == 0:
                 print(f'[scan] {n}/{len(candidates)}，命中 {len(picked)}，错误 {errors}', flush=True)
 
-    # 按最近一次信号日的放量倍数排序，越靠前越典型
+    # 按最近一次信号日、信号强度排序，越靠前越典型
     picked.sort(key=lambda x: (x['signals'][-1]['date'], x['signals'][-1]['volumeRatio']), reverse=True)
-    out = {
-        'generatedAt': dt.datetime.now(dt.timezone.utc).isoformat(timespec='seconds'),
-        'rules': {
+    if mode == 'bottom3x':
+        rules = {
+            'formula': '三倍量:=V>=REF(V,1)*3; 底部:=C<=LLV(L,60)*1.15; '
+                       '阳线:=C>O; XG:三倍量 AND 底部 AND 阳线;',
+            'volumeMultiple': VOLUME_MULTIPLE,
+            'bottomLookback': BOTTOM_LOOKBACK,
+            'bottomBuffer': BOTTOM_BUFFER,
+            'llvIncludesToday': True,
+            'volumeBasis': 'VOLUME（成交量，非成交额）',
+            'upperShadowFilter': False,
+            'basicPoolFilter': False,
+            'signalScanDays': SIGNAL_SCAN_DAYS,
+        }
+        note = ('按截屏原公式逐行实现：LLV(L,60) 含当日；原文注释「过滤长上影诱多」'
+                '在代码里只有 C>O、并未实现影线过滤，故不额外加条件；'
+                '旧三层规则（ST/连板/市值/一手成本/科创板/近10日均额/周线MA）本模式全部不生效。'
+                '信号日限制在分时数据可覆盖的近 25 个交易日内。')
+    else:
+        rules = {
             'minFloatMvYi': MIN_FLOAT_MV_YI,
             'minAvgAmountYi': MIN_AVG_AMOUNT_YI,
             'volumeRatioMin': VOLUME_RATIO_MIN,
             'maxLotCost': MAX_LOT_COST,
             'signalScanDays': SIGNAL_SCAN_DAYS,
             'weekMA': [5, 10, 20],
-        },
-        'note': '两个池子门槛为可推翻的默认填值；信号日已限制在分时数据可覆盖的近 25 个交易日内',
+        }
+        note = 'legacy 旧三层规则；两个池子门槛为可推翻的默认填值'
+    out = {
+        'generatedAt': dt.datetime.now(dt.timezone.utc).isoformat(timespec='seconds'),
+        'mode': mode,
+        'rules': rules,
+        'note': note,
         'scanned': len(candidates),
         'errors': errors,
         'symbols': picked,
         'signalDays': sum(len(p['signals']) for p in picked),
     }
     SELECTION.write_text(json.dumps(out, ensure_ascii=False, indent=1), encoding='utf-8')
-    print(f'\n[ok] 命中 {len(picked)} 只 / {out["signalDays"]} 个信号日，'
+    write_public_summary(out)
+    if args.write_picked:
+        codes = pick_pool(picked, args.write_picked)
+        picked_file = RAW / 'picked.json'
+        picked_file.write_text(json.dumps(codes, ensure_ascii=False), encoding='utf-8')
+        print(f'[picked] 实训标的 {len(codes)} 只 → {picked_file}', flush=True)
+    print(f'\n[ok] {mode} 命中 {len(picked)} 只 / {out["signalDays"]} 个信号日，'
           f'耗时 {round(time.time() - t0, 1)}s → {SELECTION}', flush=True)
     for p in picked[:20]:
         print(f"  {p['code']} {p['name']:<8} 市值 {p['floatMvYi']:>8.1f}亿  "
               f"信号 {','.join(s['date'] for s in p['signals'][-3:])}  "
-              f"放量 {p['signals'][-1]['volumeRatio']}x", flush=True)
+              f"量比 {p['signals'][-1]['volumeRatio']}x", flush=True)
 
 
 if __name__ == '__main__':

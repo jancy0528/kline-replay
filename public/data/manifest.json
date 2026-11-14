@@ -1,22 +1,24 @@
 {
-  "version": 7,
-  "generatedAt": "2026-11-13T01:40:51+00:00",
+  "version": 8,
+  "generatedAt": "2026-11-14T15:52:42+00:00",
   "source": "baostock 前复权日线（2015 起完整历史） + baostock 一年期 5 分钟线 + 腾讯股本快照",
   "adjust": "前复权，逐日按收盘价对齐",
-  "dataFile": "sessions-64aae6c3e2.json",
-  "bytes": 9417621,
+  "selectionMode": "bottom3x",
+  "selectionFormula": "三倍量:=V>=REF(V,1)*3; 底部:=C<=LLV(L,60)*1.15; 阳线:=C>O; XG:三倍量 AND 底部 AND 阳线;",
+  "dataFile": "sessions-a3199e9fc9.json",
+  "bytes": 9369832,
   "symbols": 18,
   "games": 288,
   "gameDays": 150,
-  "minuteBars": 139824,
-  "historyBars": 46693,
+  "minuteBars": 152045,
+  "historyBars": 31117,
   "selection": {
-    "symbols": 94,
-    "signals": 157,
-    "scanned": 1049,
+    "symbols": 290,
+    "signals": 297,
+    "scanned": 4599,
     "gamesWithSignal": 288,
-    "screenSignals": 147,
-    "historySignals": 141
+    "screenSignals": 121,
+    "historySignals": 167
   },
   "windows": [
     {

@@ -1,0 +1,3834 @@
+{
+ "mode": "bottom3x",
+ "generatedAt": "2026-11-14T15:33:10+00:00",
+ "rules": {
+  "formula": "三倍量:=V>=REF(V,1)*3; 底部:=C<=LLV(L,60)*1.15; 阳线:=C>O; XG:三倍量 AND 底部 AND 阳线;",
+  "volumeMultiple": 3.0,
+  "bottomLookback": 60,
+  "bottomBuffer": 0.15,
+  "llvIncludesToday": true,
+  "volumeBasis": "VOLUME（成交量，非成交额）",
+  "upperShadowFilter": false,
+  "basicPoolFilter": false,
+  "signalScanDays": 25
+ },
+ "note": "按截屏原公式逐行实现：LLV(L,60) 含当日；原文注释「过滤长上影诱多」在代码里只有 C>O、并未实现影线过滤，故不额外加条件；旧三层规则（ST/连板/市值/一手成本/科创板/近10日均额/周线MA）本模式全部不生效。信号日限制在分时数据可覆盖的近 25 个交易日内。",
+ "disclaimer": "本清单仅用于 K 线回放训练的标的筛选，不构成任何投资建议或依据。",
+ "scanned": 4599,
+ "symbols": 290,
+ "signalDays": 297,
+ "hits": [
+  {
+   "code": "sz.002039",
+   "name": "黔源电力",
+   "floatMvYi": 82.73,
+   "signals": [
+    {
+     "date": "2026-11-13",
+     "volumeRatio": 5.658,
+     "llv60": 17.91,
+     "close": 19.35
+    }
+   ]
+  },
+  {
+   "code": "sh.600405",
+   "name": "动力源",
+   "floatMvYi": 27.27,
+   "signals": [
+    {
+     "date": "2026-11-13",
+     "volumeRatio": 5.23,
+     "llv60": 3.87,
+     "close": 4.45
+    }
+   ]
+  },
+  {
+   "code": "sh.600128",
+   "name": "苏豪弘业",
+   "floatMvYi": 20.61,
+   "signals": [
+    {
+     "date": "2026-11-13",
+     "volumeRatio": 4.836,
+     "llv60": 7.53,
+     "close": 8.35
+    }
+   ]
+  },
+  {
+   "code": "sh.600975",
+   "name": "新五丰",
+   "floatMvYi": 62.23,
+   "signals": [
+    {
+     "date": "2026-11-13",
+     "volumeRatio": 4.38,
+     "llv60": 4.45,
+     "close": 4.98
+    }
+   ]
+  },
+  {
+   "code": "sh.600959",
+   "name": "江苏有线",
+   "floatMvYi": 164.52,
+   "signals": [
+    {
+     "date": "2026-11-13",
+     "volumeRatio": 3.52,
+     "llv60": 2.94,
+     "close": 3.29
+    }
+   ]
+  },
+  {
+   "code": "sz.000034",
+   "name": "神州数码",
+   "floatMvYi": 185.28,
+   "signals": [
+    {
+     "date": "2026-11-13",
+     "volumeRatio": 3.421,
+     "llv60": 19.58,
+     "close": 21.82
+    }
+   ]
+  },
+  {
+   "code": "sh.600651",
+   "name": "飞乐音响",
+   "floatMvYi": 129.86,
+   "signals": [
+    {
+     "date": "2026-11-13",
+     "volumeRatio": 3.375,
+     "llv60": 4.53,
+     "close": 5.18
+    }
+   ]
+  },
+  {
+   "code": "sz.002116",
+   "name": "中国海诚",
+   "floatMvYi": 38.07,
+   "signals": [
+    {
+     "date": "2026-11-13",
+     "volumeRatio": 3.267,
+     "llv60": 6.55,
+     "close": 6.89
+    }
+   ]
+  },
+  {
+   "code": "sz.300683",
+   "name": "海特生物",
+   "floatMvYi": 28.47,
+   "signals": [
+    {
+     "date": "2026-11-13",
+     "volumeRatio": 3.129,
+     "llv60": 21.15,
+     "close": 23.3
+    }
+   ]
+  },
+  {
+   "code": "sh.605155",
+   "name": "西大门",
+   "floatMvYi": 25.02,
+   "signals": [
+    {
+     "date": "2026-11-13",
+     "volumeRatio": 3.072,
+     "llv60": 11.71,
+     "close": 13.35
+    }
+   ]
+  },
+  {
+   "code": "sh.603206",
+   "name": "嘉环科技",
+   "floatMvYi": 41.75,
+   "signals": [
+    {
+     "date": "2026-11-13",
+     "volumeRatio": 3.064,
+     "llv60": 12.01,
+     "close": 13.68
+    }
+   ]
+  },
+  {
+   "code": "sz.000752",
+   "name": "*ST西发",
+   "floatMvYi": 21.5,
+   "signals": [
+    {
+     "date": "2026-11-12",
+     "volumeRatio": 9.579,
+     "llv60": 7.58,
+     "close": 8.5
+    }
+   ]
+  },
+  {
+   "code": "sh.603499",
+   "name": "翔港科技",
+   "floatMvYi": 44.18,
+   "signals": [
+    {
+     "date": "2026-11-12",
+     "volumeRatio": 5.191,
+     "llv60": 10.12,
+     "close": 11.24
+    }
+   ]
+  },
+  {
+   "code": "sz.000882",
+   "name": "华联股份",
+   "floatMvYi": 39.11,
+   "signals": [
+    {
+     "date": "2026-11-12",
+     "volumeRatio": 5.096,
+     "llv60": 1.32,
+     "close": 1.48
+    }
+   ]
+  },
+  {
+   "code": "sz.001386",
+   "name": "马可波罗",
+   "floatMvYi": 27.01,
+   "signals": [
+    {
+     "date": "2026-11-12",
+     "volumeRatio": 4.554,
+     "llv60": 14.17,
+     "close": 15.95
+    }
+   ]
+  },
+  {
+   "code": "sh.603227",
+   "name": "雪峰科技",
+   "floatMvYi": 72.98,
+   "signals": [
+    {
+     "date": "2026-11-12",
+     "volumeRatio": 4.535,
+     "llv60": 6.53,
+     "close": 7.03
+    }
+   ]
+  },
+  {
+   "code": "sh.600238",
+   "name": "ST椰岛",
+   "floatMvYi": 18.7,
+   "signals": [
+    {
+     "date": "2026-11-12",
+     "volumeRatio": 4.375,
+     "llv60": 3.53,
+     "close": 3.92
+    }
+   ]
+  },
+  {
+   "code": "sz.002650",
+   "name": "ST加加",
+   "floatMvYi": 67.31,
+   "signals": [
+    {
+     "date": "2026-11-12",
+     "volumeRatio": 4.29,
+     "llv60": 5.75,
+     "close": 6.17
+    }
+   ]
+  },
+  {
+   "code": "sz.300922",
+   "name": "天秦装备",
+   "floatMvYi": 19.0,
+   "signals": [
+    {
+     "date": "2026-11-12",
+     "volumeRatio": 4.089,
+     "llv60": 13.96,
+     "close": 15.88
+    }
+   ]
+  },
+  {
+   "code": "sz.002647",
+   "name": "仁东控股",
+   "floatMvYi": 81.53,
+   "signals": [
+    {
+     "date": "2026-11-12",
+     "volumeRatio": 3.953,
+     "llv60": 6.71,
+     "close": 7.7
+    }
+   ]
+  },
+  {
+   "code": "sz.301575",
+   "name": "艾芬达",
+   "floatMvYi": 16.62,
+   "signals": [
+    {
+     "date": "2026-11-12",
+     "volumeRatio": 3.731,
+     "llv60": 19.9,
+     "close": 21.76
+    }
+   ]
+  },
+  {
+   "code": "sh.601789",
+   "name": "宁波建工",
+   "floatMvYi": 41.84,
+   "signals": [
+    {
+     "date": "2026-11-12",
+     "volumeRatio": 3.708,
+     "llv60": 3.73,
+     "close": 4.01
+    }
+   ]
+  },
+  {
+   "code": "sh.600399",
+   "name": "抚顺特钢",
+   "floatMvYi": 80.66,
+   "signals": [
+    {
+     "date": "2026-11-12",
+     "volumeRatio": 3.47,
+     "llv60": 3.94,
+     "close": 4.13
+    }
+   ]
+  },
+  {
+   "code": "sh.600079",
+   "name": "ST人福",
+   "floatMvYi": 306.63,
+   "signals": [
+    {
+     "date": "2026-11-12",
+     "volumeRatio": 3.466,
+     "llv60": 17.63,
+     "close": 19.89
+    }
+   ]
+  },
+  {
+   "code": "sz.000766",
+   "name": "通化金马",
+   "floatMvYi": 159.33,
+   "signals": [
+    {
+     "date": "2026-11-12",
+     "volumeRatio": 3.462,
+     "llv60": 13.52,
+     "close": 15.0
+    }
+   ]
+  },
+  {
+   "code": "sh.605166",
+   "name": "聚合顺",
+   "floatMvYi": 24.49,
+   "signals": [
+    {
+     "date": "2026-11-12",
+     "volumeRatio": 3.273,
+     "llv60": 7.15,
+     "close": 7.94
+    }
+   ]
+  },
+  {
+   "code": "sz.000519",
+   "name": "中兵红箭",
+   "floatMvYi": 188.13,
+   "signals": [
+    {
+     "date": "2026-11-12",
+     "volumeRatio": 3.175,
+     "llv60": 13.11,
+     "close": 14.11
+    }
+   ]
+  },
+  {
+   "code": "sz.003013",
+   "name": "地铁设计",
+   "floatMvYi": 62.56,
+   "signals": [
+    {
+     "date": "2026-11-12",
+     "volumeRatio": 3.114,
+     "llv60": 14.23,
+     "close": 15.3
+    }
+   ]
+  },
+  {
+   "code": "sh.601033",
+   "name": "永兴股份",
+   "floatMvYi": 35.86,
+   "signals": [
+    {
+     "date": "2026-10-29",
+     "volumeRatio": 6.962,
+     "llv60": 13.95,
+     "close": 15.16
+    },
+    {
+     "date": "2026-11-12",
+     "volumeRatio": 3.062,
+     "llv60": 13.95,
+     "close": 15.02
+    }
+   ]
+  },
+  {
+   "code": "sz.002427",
+   "name": "尤夫股份",
+   "floatMvYi": 40.46,
+   "signals": [
+    {
+     "date": "2026-11-11",
+     "volumeRatio": 13.558,
+     "llv60": 4.11,
+     "close": 4.58
+    }
+   ]
+  },
+  {
+   "code": "sh.600135",
+   "name": "乐凯胶片",
+   "floatMvYi": 37.62,
+   "signals": [
+    {
+     "date": "2026-11-11",
+     "volumeRatio": 6.379,
+     "llv60": 6.49,
+     "close": 7.2
+    }
+   ]
+  },
+  {
+   "code": "sz.002398",
+   "name": "垒知集团",
+   "floatMvYi": 22.85,
+   "signals": [
+    {
+     "date": "2026-11-11",
+     "volumeRatio": 4.853,
+     "llv60": 3.63,
+     "close": 4.0
+    }
+   ]
+  },
+  {
+   "code": "sh.600815",
+   "name": "厦工股份",
+   "floatMvYi": 52.34,
+   "signals": [
+    {
+     "date": "2026-11-11",
+     "volumeRatio": 4.596,
+     "llv60": 2.66,
+     "close": 3.05
+    }
+   ]
+  },
+  {
+   "code": "sh.600846",
+   "name": "同济科技",
+   "floatMvYi": 55.92,
+   "signals": [
+    {
+     "date": "2026-11-11",
+     "volumeRatio": 4.281,
+     "llv60": 9.19,
+     "close": 9.54
+    }
+   ]
+  },
+  {
+   "code": "sh.603036",
+   "name": "如通股份",
+   "floatMvYi": 27.77,
+   "signals": [
+    {
+     "date": "2026-11-11",
+     "volumeRatio": 4.226,
+     "llv60": 11.64,
+     "close": 13.13
+    }
+   ]
+  },
+  {
+   "code": "sh.603966",
+   "name": "法兰泰克",
+   "floatMvYi": 38.35,
+   "signals": [
+    {
+     "date": "2026-11-11",
+     "volumeRatio": 3.826,
+     "llv60": 6.71,
+     "close": 7.6
+    }
+   ]
+  },
+  {
+   "code": "sz.300858",
+   "name": "科拓生物",
+   "floatMvYi": 26.05,
+   "signals": [
+    {
+     "date": "2026-11-11",
+     "volumeRatio": 3.811,
+     "llv60": 12.72,
+     "close": 13.84
+    }
+   ]
+  },
+  {
+   "code": "sz.002397",
+   "name": "梦洁股份",
+   "floatMvYi": 19.97,
+   "signals": [
+    {
+     "date": "2026-11-11",
+     "volumeRatio": 3.808,
+     "llv60": 2.95,
+     "close": 3.26
+    }
+   ]
+  },
+  {
+   "code": "sz.001279",
+   "name": "强邦新材",
+   "floatMvYi": 10.08,
+   "signals": [
+    {
+     "date": "2026-11-11",
+     "volumeRatio": 3.803,
+     "llv60": 24.03,
+     "close": 25.61
+    }
+   ]
+  },
+  {
+   "code": "sh.603429",
+   "name": "*ST集友",
+   "floatMvYi": 34.56,
+   "signals": [
+    {
+     "date": "2026-11-11",
+     "volumeRatio": 3.634,
+     "llv60": 6.66,
+     "close": 7.25
+    }
+   ]
+  },
+  {
+   "code": "sh.603787",
+   "name": "新日股份",
+   "floatMvYi": 21.13,
+   "signals": [
+    {
+     "date": "2026-11-11",
+     "volumeRatio": 3.553,
+     "llv60": 8.77,
+     "close": 9.65
+    }
+   ]
+  },
+  {
+   "code": "sz.000910",
+   "name": "大亚圣象",
+   "floatMvYi": 28.13,
+   "signals": [
+    {
+     "date": "2026-11-11",
+     "volumeRatio": 3.491,
+     "llv60": 4.77,
+     "close": 5.32
+    }
+   ]
+  },
+  {
+   "code": "sz.300415",
+   "name": "伊之密",
+   "floatMvYi": 83.57,
+   "signals": [
+    {
+     "date": "2026-11-11",
+     "volumeRatio": 3.283,
+     "llv60": 16.98,
+     "close": 19.45
+    }
+   ]
+  },
+  {
+   "code": "sh.605580",
+   "name": "恒盛能源",
+   "floatMvYi": 44.02,
+   "signals": [
+    {
+     "date": "2026-11-11",
+     "volumeRatio": 3.217,
+     "llv60": 14.47,
+     "close": 16.53
+    }
+   ]
+  },
+  {
+   "code": "sh.603116",
+   "name": "红蜻蜓",
+   "floatMvYi": 31.06,
+   "signals": [
+    {
+     "date": "2026-11-11",
+     "volumeRatio": 3.134,
+     "llv60": 5.34,
+     "close": 5.83
+    }
+   ]
+  },
+  {
+   "code": "sz.300011",
+   "name": "鼎汉技术",
+   "floatMvYi": 27.37,
+   "signals": [
+    {
+     "date": "2026-11-11",
+     "volumeRatio": 3.087,
+     "llv60": 5.12,
+     "close": 5.61
+    }
+   ]
+  },
+  {
+   "code": "sh.605066",
+   "name": "天正电气",
+   "floatMvYi": 32.46,
+   "signals": [
+    {
+     "date": "2026-11-11",
+     "volumeRatio": 3.072,
+     "llv60": 6.04,
+     "close": 6.83
+    }
+   ]
+  },
+  {
+   "code": "sz.300551",
+   "name": "古鳌科技",
+   "floatMvYi": 29.95,
+   "signals": [
+    {
+     "date": "2026-11-10",
+     "volumeRatio": 4.203,
+     "llv60": 8.57,
+     "close": 9.7
+    }
+   ]
+  },
+  {
+   "code": "sz.002021",
+   "name": "中捷资源",
+   "floatMvYi": 29.05,
+   "signals": [
+    {
+     "date": "2026-11-10",
+     "volumeRatio": 3.815,
+     "llv60": 2.09,
+     "close": 2.37
+    }
+   ]
+  },
+  {
+   "code": "sz.002953",
+   "name": "日丰股份",
+   "floatMvYi": 27.31,
+   "signals": [
+    {
+     "date": "2026-10-20",
+     "volumeRatio": 3.401,
+     "llv60": 8.45,
+     "close": 9.59
+    },
+    {
+     "date": "2026-11-10",
+     "volumeRatio": 3.762,
+     "llv60": 8.88,
+     "close": 9.98
+    }
+   ]
+  },
+  {
+   "code": "sh.600223",
+   "name": "福瑞达",
+   "floatMvYi": 53.06,
+   "signals": [
+    {
+     "date": "2026-11-10",
+     "volumeRatio": 3.66,
+     "llv60": 5.15,
+     "close": 5.48
+    }
+   ]
+  },
+  {
+   "code": "sz.002729",
+   "name": "好利科技",
+   "floatMvYi": 23.13,
+   "signals": [
+    {
+     "date": "2026-11-10",
+     "volumeRatio": 3.627,
+     "llv60": 11.92,
+     "close": 13.45
+    }
+   ]
+  },
+  {
+   "code": "sz.300822",
+   "name": "贝仕达克",
+   "floatMvYi": 29.59,
+   "signals": [
+    {
+     "date": "2026-10-23",
+     "volumeRatio": 4.032,
+     "llv60": 9.31,
+     "close": 10.28
+    },
+    {
+     "date": "2026-11-09",
+     "volumeRatio": 4.715,
+     "llv60": 8.9,
+     "close": 10.04
+    }
+   ]
+  },
+  {
+   "code": "sh.600456",
+   "name": "宝钛股份",
+   "floatMvYi": 117.34,
+   "signals": [
+    {
+     "date": "2026-11-09",
+     "volumeRatio": 4.571,
+     "llv60": 23.13,
+     "close": 25.85
+    }
+   ]
+  },
+  {
+   "code": "sh.601015",
+   "name": "陕西黑猫",
+   "floatMvYi": 64.95,
+   "signals": [
+    {
+     "date": "2026-11-09",
+     "volumeRatio": 4.353,
+     "llv60": 3.03,
+     "close": 3.38
+    }
+   ]
+  },
+  {
+   "code": "sh.600793",
+   "name": "宜宾纸业",
+   "floatMvYi": 26.34,
+   "signals": [
+    {
+     "date": "2026-11-09",
+     "volumeRatio": 4.165,
+     "llv60": 12.58,
+     "close": 13.95
+    }
+   ]
+  },
+  {
+   "code": "sz.002978",
+   "name": "安宁股份",
+   "floatMvYi": 86.37,
+   "signals": [
+    {
+     "date": "2026-11-09",
+     "volumeRatio": 4.079,
+     "llv60": 23.16,
+     "close": 25.0
+    }
+   ]
+  },
+  {
+   "code": "sh.600609",
+   "name": "金杯汽车",
+   "floatMvYi": 47.62,
+   "signals": [
+    {
+     "date": "2026-11-09",
+     "volumeRatio": 3.666,
+     "llv60": 3.1,
+     "close": 3.48
+    }
+   ]
+  },
+  {
+   "code": "sh.600889",
+   "name": "*ST京化",
+   "floatMvYi": 46.31,
+   "signals": [
+    {
+     "date": "2026-11-09",
+     "volumeRatio": 3.396,
+     "llv60": 11.47,
+     "close": 12.61
+    }
+   ]
+  },
+  {
+   "code": "sz.002323",
+   "name": "*ST雅博",
+   "floatMvYi": 24.6,
+   "signals": [
+    {
+     "date": "2026-11-09",
+     "volumeRatio": 3.286,
+     "llv60": 1.04,
+     "close": 1.19
+    }
+   ]
+  },
+  {
+   "code": "sh.603706",
+   "name": "东方环宇",
+   "floatMvYi": 52.55,
+   "signals": [
+    {
+     "date": "2026-11-06",
+     "volumeRatio": 5.707,
+     "llv60": 16.33,
+     "close": 18.35
+    }
+   ]
+  },
+  {
+   "code": "sz.002641",
+   "name": "公元股份",
+   "floatMvYi": 38.78,
+   "signals": [
+    {
+     "date": "2026-11-06",
+     "volumeRatio": 5.651,
+     "llv60": 3.33,
+     "close": 3.78
+    }
+   ]
+  },
+  {
+   "code": "sz.000631",
+   "name": "顺发恒能",
+   "floatMvYi": 67.16,
+   "signals": [
+    {
+     "date": "2026-11-06",
+     "volumeRatio": 4.849,
+     "llv60": 2.65,
+     "close": 2.91
+    }
+   ]
+  },
+  {
+   "code": "sh.600038",
+   "name": "中直股份",
+   "floatMvYi": 179.74,
+   "signals": [
+    {
+     "date": "2026-11-06",
+     "volumeRatio": 4.062,
+     "llv60": 25.15,
+     "close": 28.77
+    }
+   ]
+  },
+  {
+   "code": "sz.000541",
+   "name": "佛山照明",
+   "floatMvYi": 62.26,
+   "signals": [
+    {
+     "date": "2026-11-06",
+     "volumeRatio": 3.817,
+     "llv60": 4.76,
+     "close": 5.18
+    }
+   ]
+  },
+  {
+   "code": "sz.002160",
+   "name": "常铝股份",
+   "floatMvYi": 38.14,
+   "signals": [
+    {
+     "date": "2026-11-06",
+     "volumeRatio": 3.677,
+     "llv60": 3.27,
+     "close": 3.7
+    }
+   ]
+  },
+  {
+   "code": "sh.603895",
+   "name": "天永智能",
+   "floatMvYi": 26.93,
+   "signals": [
+    {
+     "date": "2026-11-06",
+     "volumeRatio": 3.114,
+     "llv60": 22.3,
+     "close": 24.25
+    }
+   ]
+  },
+  {
+   "code": "sh.600744",
+   "name": "华银电力",
+   "floatMvYi": 110.29,
+   "signals": [
+    {
+     "date": "2026-11-06",
+     "volumeRatio": 3.102,
+     "llv60": 5.31,
+     "close": 6.01
+    }
+   ]
+  },
+  {
+   "code": "sz.002124",
+   "name": "天邦食品",
+   "floatMvYi": 45.56,
+   "signals": [
+    {
+     "date": "2026-11-06",
+     "volumeRatio": 3.025,
+     "llv60": 1.75,
+     "close": 2.0
+    }
+   ]
+  },
+  {
+   "code": "sz.002819",
+   "name": "东方中科",
+   "floatMvYi": 51.26,
+   "signals": [
+    {
+     "date": "2026-11-06",
+     "volumeRatio": 3.009,
+     "llv60": 17.4,
+     "close": 19.15
+    }
+   ]
+  },
+  {
+   "code": "sh.603578",
+   "name": "三星新材",
+   "floatMvYi": 16.23,
+   "signals": [
+    {
+     "date": "2026-11-05",
+     "volumeRatio": 35.242,
+     "llv60": 10.22,
+     "close": 10.6
+    }
+   ]
+  },
+  {
+   "code": "sz.000159",
+   "name": "国际实业",
+   "floatMvYi": 21.39,
+   "signals": [
+    {
+     "date": "2026-11-05",
+     "volumeRatio": 3.698,
+     "llv60": 4.51,
+     "close": 5.0
+    }
+   ]
+  },
+  {
+   "code": "sz.002302",
+   "name": "西部建设",
+   "floatMvYi": 56.43,
+   "signals": [
+    {
+     "date": "2026-10-13",
+     "volumeRatio": 4.514,
+     "llv60": 4.25,
+     "close": 4.85
+    },
+    {
+     "date": "2026-11-05",
+     "volumeRatio": 3.675,
+     "llv60": 4.29,
+     "close": 4.77
+    }
+   ]
+  },
+  {
+   "code": "sh.600650",
+   "name": "锦江在线",
+   "floatMvYi": 40.46,
+   "signals": [
+    {
+     "date": "2026-11-05",
+     "volumeRatio": 3.644,
+     "llv60": 9.4,
+     "close": 10.36
+    }
+   ]
+  },
+  {
+   "code": "sz.000877",
+   "name": "天山股份",
+   "floatMvYi": 209.05,
+   "signals": [
+    {
+     "date": "2026-11-05",
+     "volumeRatio": 3.358,
+     "llv60": 3.22,
+     "close": 3.34
+    }
+   ]
+  },
+  {
+   "code": "sh.600478",
+   "name": "科力远",
+   "floatMvYi": 56.07,
+   "signals": [
+    {
+     "date": "2026-11-04",
+     "volumeRatio": 12.443,
+     "llv60": 3.28,
+     "close": 3.41
+    }
+   ]
+  },
+  {
+   "code": "sz.000419",
+   "name": "通程控股",
+   "floatMvYi": 26.26,
+   "signals": [
+    {
+     "date": "2026-11-04",
+     "volumeRatio": 5.549,
+     "llv60": 4.65,
+     "close": 5.05
+    }
+   ]
+  },
+  {
+   "code": "sh.600697",
+   "name": "欧亚集团",
+   "floatMvYi": 17.6,
+   "signals": [
+    {
+     "date": "2026-11-04",
+     "volumeRatio": 3.633,
+     "llv60": 9.94,
+     "close": 11.07
+    }
+   ]
+  },
+  {
+   "code": "sz.300947",
+   "name": "德必集团",
+   "floatMvYi": 20.24,
+   "signals": [
+    {
+     "date": "2026-11-04",
+     "volumeRatio": 3.397,
+     "llv60": 11.99,
+     "close": 13.4
+    }
+   ]
+  },
+  {
+   "code": "sz.002218",
+   "name": "拓日新能",
+   "floatMvYi": 48.15,
+   "signals": [
+    {
+     "date": "2026-11-04",
+     "volumeRatio": 3.107,
+     "llv60": 3.21,
+     "close": 3.56
+    }
+   ]
+  },
+  {
+   "code": "sz.002462",
+   "name": "嘉事堂",
+   "floatMvYi": 30.84,
+   "signals": [
+    {
+     "date": "2026-11-04",
+     "volumeRatio": 3.061,
+     "llv60": 10.46,
+     "close": 11.11
+    }
+   ]
+  },
+  {
+   "code": "sh.603092",
+   "name": "德力佳",
+   "floatMvYi": 91.23,
+   "signals": [
+    {
+     "date": "2026-11-04",
+     "volumeRatio": 3.024,
+     "llv60": 36.0,
+     "close": 41.34
+    }
+   ]
+  },
+  {
+   "code": "sz.001396",
+   "name": "誉帆科技",
+   "floatMvYi": 6.17,
+   "signals": [
+    {
+     "date": "2026-11-03",
+     "volumeRatio": 5.558,
+     "llv60": 25.15,
+     "close": 27.1
+    }
+   ]
+  },
+  {
+   "code": "sz.002190",
+   "name": "成飞集成",
+   "floatMvYi": 78.38,
+   "signals": [
+    {
+     "date": "2026-11-03",
+     "volumeRatio": 4.817,
+     "llv60": 20.14,
+     "close": 22.33
+    }
+   ]
+  },
+  {
+   "code": "sz.300247",
+   "name": "融捷健康",
+   "floatMvYi": 27.1,
+   "signals": [
+    {
+     "date": "2026-11-03",
+     "volumeRatio": 4.367,
+     "llv60": 3.17,
+     "close": 3.54
+    }
+   ]
+  },
+  {
+   "code": "sz.300477",
+   "name": "ST合纵",
+   "floatMvYi": 19.51,
+   "signals": [
+    {
+     "date": "2026-11-03",
+     "volumeRatio": 4.324,
+     "llv60": 1.85,
+     "close": 1.99
+    }
+   ]
+  },
+  {
+   "code": "sz.002651",
+   "name": "利君股份",
+   "floatMvYi": 42.3,
+   "signals": [
+    {
+     "date": "2026-11-03",
+     "volumeRatio": 4.239,
+     "llv60": 7.132,
+     "close": 7.692
+    }
+   ]
+  },
+  {
+   "code": "sh.603202",
+   "name": "天有为",
+   "floatMvYi": 25.53,
+   "signals": [
+    {
+     "date": "2026-11-03",
+     "volumeRatio": 4.202,
+     "llv60": 47.21,
+     "close": 51.67
+    }
+   ]
+  },
+  {
+   "code": "sz.000151",
+   "name": "中成股份",
+   "floatMvYi": 31.87,
+   "signals": [
+    {
+     "date": "2026-11-03",
+     "volumeRatio": 3.957,
+     "llv60": 8.48,
+     "close": 9.56
+    }
+   ]
+  },
+  {
+   "code": "sz.002522",
+   "name": "浙江众成",
+   "floatMvYi": 44.17,
+   "signals": [
+    {
+     "date": "2026-11-03",
+     "volumeRatio": 3.772,
+     "llv60": 4.48,
+     "close": 5.06
+    }
+   ]
+  },
+  {
+   "code": "sh.603989",
+   "name": "艾华集团",
+   "floatMvYi": 88.09,
+   "signals": [
+    {
+     "date": "2026-11-03",
+     "volumeRatio": 3.739,
+     "llv60": 19.76,
+     "close": 22.16
+    }
+   ]
+  },
+  {
+   "code": "sh.600278",
+   "name": "东方创业",
+   "floatMvYi": 59.46,
+   "signals": [
+    {
+     "date": "2026-11-03",
+     "volumeRatio": 3.506,
+     "llv60": 5.96,
+     "close": 6.58
+    }
+   ]
+  },
+  {
+   "code": "sh.603402",
+   "name": "陕西旅游",
+   "floatMvYi": 13.19,
+   "signals": [
+    {
+     "date": "2026-11-03",
+     "volumeRatio": 3.367,
+     "llv60": 49.2,
+     "close": 56.35
+    }
+   ]
+  },
+  {
+   "code": "sh.603628",
+   "name": "清源股份",
+   "floatMvYi": 28.2,
+   "signals": [
+    {
+     "date": "2026-11-03",
+     "volumeRatio": 3.275,
+     "llv60": 8.95,
+     "close": 10.27
+    }
+   ]
+  },
+  {
+   "code": "sz.002625",
+   "name": "光启技术",
+   "floatMvYi": 397.73,
+   "signals": [
+    {
+     "date": "2026-11-02",
+     "volumeRatio": 8.839,
+     "llv60": 16.82,
+     "close": 19.13
+    }
+   ]
+  },
+  {
+   "code": "sh.603014",
+   "name": "威高血净",
+   "floatMvYi": 35.52,
+   "signals": [
+    {
+     "date": "2026-11-02",
+     "volumeRatio": 6.123,
+     "llv60": 28.6,
+     "close": 32.11
+    }
+   ]
+  },
+  {
+   "code": "sh.603045",
+   "name": "福达合金",
+   "floatMvYi": 43.63,
+   "signals": [
+    {
+     "date": "2026-11-02",
+     "volumeRatio": 5.776,
+     "llv60": 29.4,
+     "close": 31.29
+    }
+   ]
+  },
+  {
+   "code": "sh.600211",
+   "name": "西藏药业",
+   "floatMvYi": 126.41,
+   "signals": [
+    {
+     "date": "2026-11-02",
+     "volumeRatio": 5.052,
+     "llv60": 34.85,
+     "close": 38.73
+    }
+   ]
+  },
+  {
+   "code": "sh.603860",
+   "name": "中公高科",
+   "floatMvYi": 17.29,
+   "signals": [
+    {
+     "date": "2026-11-02",
+     "volumeRatio": 3.767,
+     "llv60": 23.56,
+     "close": 25.27
+    }
+   ]
+  },
+  {
+   "code": "sh.600883",
+   "name": "博闻科技",
+   "floatMvYi": 16.97,
+   "signals": [
+    {
+     "date": "2026-11-02",
+     "volumeRatio": 3.37,
+     "llv60": 6.58,
+     "close": 7.02
+    }
+   ]
+  },
+  {
+   "code": "sh.600897",
+   "name": "厦门空港",
+   "floatMvYi": 58.58,
+   "signals": [
+    {
+     "date": "2026-11-02",
+     "volumeRatio": 3.256,
+     "llv60": 13.51,
+     "close": 14.2
+    }
+   ]
+  },
+  {
+   "code": "sh.600612",
+   "name": "老凤祥",
+   "floatMvYi": 98.43,
+   "signals": [
+    {
+     "date": "2026-11-02",
+     "volumeRatio": 3.108,
+     "llv60": 30.55,
+     "close": 31.54
+    }
+   ]
+  },
+  {
+   "code": "sh.600820",
+   "name": "隧道股份",
+   "floatMvYi": 163.81,
+   "signals": [
+    {
+     "date": "2026-11-02",
+     "volumeRatio": 3.098,
+     "llv60": 5.09,
+     "close": 5.51
+    }
+   ]
+  },
+  {
+   "code": "sh.600300",
+   "name": "维维股份",
+   "floatMvYi": 49.0,
+   "signals": [
+    {
+     "date": "2026-11-02",
+     "volumeRatio": 3.02,
+     "llv60": 2.81,
+     "close": 3.06
+    }
+   ]
+  },
+  {
+   "code": "sh.600182",
+   "name": "S佳通",
+   "floatMvYi": 18.87,
+   "signals": [
+    {
+     "date": "2026-11-02",
+     "volumeRatio": 3.007,
+     "llv60": 11.2,
+     "close": 11.46
+    }
+   ]
+  },
+  {
+   "code": "sh.600688",
+   "name": "上海石化",
+   "floatMvYi": 211.07,
+   "signals": [
+    {
+     "date": "2026-10-30",
+     "volumeRatio": 7.219,
+     "llv60": 2.7,
+     "close": 3.05
+    }
+   ]
+  },
+  {
+   "code": "sz.300218",
+   "name": "安利股份",
+   "floatMvYi": 26.6,
+   "signals": [
+    {
+     "date": "2026-10-30",
+     "volumeRatio": 6.433,
+     "llv60": 11.3,
+     "close": 12.12
+    }
+   ]
+  },
+  {
+   "code": "sz.000900",
+   "name": "现代投资",
+   "floatMvYi": 53.73,
+   "signals": [
+    {
+     "date": "2026-10-30",
+     "volumeRatio": 5.951,
+     "llv60": 3.4,
+     "close": 3.62
+    }
+   ]
+  },
+  {
+   "code": "sh.603899",
+   "name": "晨光股份",
+   "floatMvYi": 202.94,
+   "signals": [
+    {
+     "date": "2026-10-30",
+     "volumeRatio": 5.784,
+     "llv60": 21.17,
+     "close": 22.75
+    }
+   ]
+  },
+  {
+   "code": "sz.002582",
+   "name": "好想你",
+   "floatMvYi": 33.04,
+   "signals": [
+    {
+     "date": "2026-10-30",
+     "volumeRatio": 5.129,
+     "llv60": 8.73,
+     "close": 9.93
+    }
+   ]
+  },
+  {
+   "code": "sz.300856",
+   "name": "科思股份",
+   "floatMvYi": 48.32,
+   "signals": [
+    {
+     "date": "2026-10-30",
+     "volumeRatio": 4.467,
+     "llv60": 9.79,
+     "close": 10.38
+    }
+   ]
+  },
+  {
+   "code": "sh.600035",
+   "name": "楚天高速",
+   "floatMvYi": 61.02,
+   "signals": [
+    {
+     "date": "2026-10-30",
+     "volumeRatio": 4.412,
+     "llv60": 3.34,
+     "close": 3.83
+    }
+   ]
+  },
+  {
+   "code": "sz.300041",
+   "name": "回天新材",
+   "floatMvYi": 53.08,
+   "signals": [
+    {
+     "date": "2026-10-30",
+     "volumeRatio": 4.241,
+     "llv60": 9.12,
+     "close": 9.74
+    }
+   ]
+  },
+  {
+   "code": "sz.002120",
+   "name": "韵达股份",
+   "floatMvYi": 173.98,
+   "signals": [
+    {
+     "date": "2026-10-30",
+     "volumeRatio": 4.24,
+     "llv60": 6.06,
+     "close": 6.17
+    }
+   ]
+  },
+  {
+   "code": "sh.600119",
+   "name": "*ST长投",
+   "floatMvYi": 16.62,
+   "signals": [
+    {
+     "date": "2026-10-30",
+     "volumeRatio": 4.174,
+     "llv60": 4.15,
+     "close": 4.46
+    }
+   ]
+  },
+  {
+   "code": "sz.002737",
+   "name": "葵花药业",
+   "floatMvYi": 68.97,
+   "signals": [
+    {
+     "date": "2026-10-30",
+     "volumeRatio": 4.119,
+     "llv60": 10.95,
+     "close": 11.85
+    }
+   ]
+  },
+  {
+   "code": "sz.300712",
+   "name": "永福股份",
+   "floatMvYi": 34.43,
+   "signals": [
+    {
+     "date": "2026-10-30",
+     "volumeRatio": 4.099,
+     "llv60": 17.4,
+     "close": 19.11
+    }
+   ]
+  },
+  {
+   "code": "sh.601717",
+   "name": "中创智领",
+   "floatMvYi": 234.87,
+   "signals": [
+    {
+     "date": "2026-10-30",
+     "volumeRatio": 4.078,
+     "llv60": 12.96,
+     "close": 14.5
+    }
+   ]
+  },
+  {
+   "code": "sz.002550",
+   "name": "千红制药",
+   "floatMvYi": 58.64,
+   "signals": [
+    {
+     "date": "2026-10-23",
+     "volumeRatio": 3.641,
+     "llv60": 6.01,
+     "close": 6.27
+    },
+    {
+     "date": "2026-10-30",
+     "volumeRatio": 4.033,
+     "llv60": 5.66,
+     "close": 6.05
+    }
+   ]
+  },
+  {
+   "code": "sh.600754",
+   "name": "锦江酒店",
+   "floatMvYi": 188.91,
+   "signals": [
+    {
+     "date": "2026-10-30",
+     "volumeRatio": 3.974,
+     "llv60": 17.42,
+     "close": 18.7
+    }
+   ]
+  },
+  {
+   "code": "sh.605499",
+   "name": "东鹏饮料",
+   "floatMvYi": 745.11,
+   "signals": [
+    {
+     "date": "2026-10-30",
+     "volumeRatio": 3.696,
+     "llv60": 99.33,
+     "close": 108.0
+    }
+   ]
+  },
+  {
+   "code": "sz.300286",
+   "name": "安科瑞",
+   "floatMvYi": 37.67,
+   "signals": [
+    {
+     "date": "2026-10-30",
+     "volumeRatio": 3.659,
+     "llv60": 16.75,
+     "close": 17.82
+    }
+   ]
+  },
+  {
+   "code": "sh.603589",
+   "name": "口子窖",
+   "floatMvYi": 105.87,
+   "signals": [
+    {
+     "date": "2026-10-30",
+     "volumeRatio": 3.647,
+     "llv60": 17.11,
+     "close": 18.12
+    }
+   ]
+  },
+  {
+   "code": "sh.601022",
+   "name": "宁波远洋",
+   "floatMvYi": 101.29,
+   "signals": [
+    {
+     "date": "2026-10-30",
+     "volumeRatio": 3.623,
+     "llv60": 7.8,
+     "close": 8.28
+    }
+   ]
+  },
+  {
+   "code": "sz.300289",
+   "name": "利德曼",
+   "floatMvYi": 32.59,
+   "signals": [
+    {
+     "date": "2026-10-30",
+     "volumeRatio": 3.464,
+     "llv60": 5.21,
+     "close": 5.9
+    }
+   ]
+  },
+  {
+   "code": "sh.600520",
+   "name": "三佳科技",
+   "floatMvYi": 32.34,
+   "signals": [
+    {
+     "date": "2026-10-30",
+     "volumeRatio": 3.293,
+     "llv60": 18.48,
+     "close": 19.74
+    }
+   ]
+  },
+  {
+   "code": "sh.600060",
+   "name": "海信视像",
+   "floatMvYi": 335.12,
+   "signals": [
+    {
+     "date": "2026-10-30",
+     "volumeRatio": 3.27,
+     "llv60": 24.87,
+     "close": 26.43
+    }
+   ]
+  },
+  {
+   "code": "sz.002304",
+   "name": "洋河股份",
+   "floatMvYi": 540.5,
+   "signals": [
+    {
+     "date": "2026-10-30",
+     "volumeRatio": 3.232,
+     "llv60": 34.81,
+     "close": 37.04
+    }
+   ]
+  },
+  {
+   "code": "sh.600262",
+   "name": "北方股份",
+   "floatMvYi": 32.84,
+   "signals": [
+    {
+     "date": "2026-10-30",
+     "volumeRatio": 3.227,
+     "llv60": 13.5,
+     "close": 14.44
+    }
+   ]
+  },
+  {
+   "code": "sz.000025",
+   "name": "特  力Ａ",
+   "floatMvYi": 53.46,
+   "signals": [
+    {
+     "date": "2026-10-30",
+     "volumeRatio": 3.204,
+     "llv60": 13.38,
+     "close": 13.82
+    }
+   ]
+  },
+  {
+   "code": "sh.601117",
+   "name": "中国化学",
+   "floatMvYi": 431.63,
+   "signals": [
+    {
+     "date": "2026-10-30",
+     "volumeRatio": 3.158,
+     "llv60": 6.72,
+     "close": 7.11
+    }
+   ]
+  },
+  {
+   "code": "sz.000568",
+   "name": "泸州老窖",
+   "floatMvYi": 1171.04,
+   "signals": [
+    {
+     "date": "2026-10-30",
+     "volumeRatio": 3.154,
+     "llv60": 67.79,
+     "close": 77.07
+    }
+   ]
+  },
+  {
+   "code": "sh.603858",
+   "name": "步长制药",
+   "floatMvYi": 154.49,
+   "signals": [
+    {
+     "date": "2026-10-30",
+     "volumeRatio": 3.135,
+     "llv60": 13.83,
+     "close": 14.68
+    }
+   ]
+  },
+  {
+   "code": "sh.603213",
+   "name": "镇洋发展",
+   "floatMvYi": 62.02,
+   "signals": [
+    {
+     "date": "2026-10-30",
+     "volumeRatio": 3.107,
+     "llv60": 13.25,
+     "close": 13.63
+    }
+   ]
+  },
+  {
+   "code": "sz.002390",
+   "name": "信邦制药",
+   "floatMvYi": 56.49,
+   "signals": [
+    {
+     "date": "2026-10-29",
+     "volumeRatio": 5.97,
+     "llv60": 2.69,
+     "close": 2.91
+    }
+   ]
+  },
+  {
+   "code": "sh.600742",
+   "name": "富维股份",
+   "floatMvYi": 57.66,
+   "signals": [
+    {
+     "date": "2026-10-29",
+     "volumeRatio": 5.088,
+     "llv60": 7.22,
+     "close": 7.86
+    }
+   ]
+  },
+  {
+   "code": "sh.603043",
+   "name": "广州酒家",
+   "floatMvYi": 84.42,
+   "signals": [
+    {
+     "date": "2026-10-29",
+     "volumeRatio": 4.966,
+     "llv60": 12.82,
+     "close": 14.4
+    }
+   ]
+  },
+  {
+   "code": "sz.002948",
+   "name": "青岛银行",
+   "floatMvYi": 230.0,
+   "signals": [
+    {
+     "date": "2026-10-29",
+     "volumeRatio": 4.887,
+     "llv60": 5.59,
+     "close": 6.33
+    }
+   ]
+  },
+  {
+   "code": "sh.603066",
+   "name": "音飞储存",
+   "floatMvYi": 27.01,
+   "signals": [
+    {
+     "date": "2026-10-29",
+     "volumeRatio": 4.379,
+     "llv60": 8.58,
+     "close": 9.49
+    }
+   ]
+  },
+  {
+   "code": "sz.001379",
+   "name": "腾达科技",
+   "floatMvYi": 10.65,
+   "signals": [
+    {
+     "date": "2026-10-29",
+     "volumeRatio": 4.134,
+     "llv60": 13.91,
+     "close": 15.73
+    }
+   ]
+  },
+  {
+   "code": "sz.002179",
+   "name": "中航光电",
+   "floatMvYi": 708.17,
+   "signals": [
+    {
+     "date": "2026-10-29",
+     "volumeRatio": 3.999,
+     "llv60": 30.97,
+     "close": 33.55
+    }
+   ]
+  },
+  {
+   "code": "sh.600510",
+   "name": "黑牡丹",
+   "floatMvYi": 79.26,
+   "signals": [
+    {
+     "date": "2026-10-29",
+     "volumeRatio": 3.94,
+     "llv60": 5.52,
+     "close": 5.87
+    }
+   ]
+  },
+  {
+   "code": "sh.600611",
+   "name": "大众交通",
+   "floatMvYi": 63.16,
+   "signals": [
+    {
+     "date": "2026-10-29",
+     "volumeRatio": 3.823,
+     "llv60": 3.9,
+     "close": 4.37
+    }
+   ]
+  },
+  {
+   "code": "sh.600997",
+   "name": "开滦股份",
+   "floatMvYi": 84.79,
+   "signals": [
+    {
+     "date": "2026-10-29",
+     "volumeRatio": 3.623,
+     "llv60": 4.72,
+     "close": 5.39
+    }
+   ]
+  },
+  {
+   "code": "sh.601698",
+   "name": "中国卫通",
+   "floatMvYi": 921.34,
+   "signals": [
+    {
+     "date": "2026-10-29",
+     "volumeRatio": 3.599,
+     "llv60": 21.21,
+     "close": 23.1
+    }
+   ]
+  },
+  {
+   "code": "sz.300129",
+   "name": "泰胜风能",
+   "floatMvYi": 46.0,
+   "signals": [
+    {
+     "date": "2026-10-29",
+     "volumeRatio": 3.587,
+     "llv60": 6.16,
+     "close": 6.6
+    }
+   ]
+  },
+  {
+   "code": "sh.600862",
+   "name": "中航高科",
+   "floatMvYi": 254.09,
+   "signals": [
+    {
+     "date": "2026-10-29",
+     "volumeRatio": 3.418,
+     "llv60": 16.86,
+     "close": 18.27
+    }
+   ]
+  },
+  {
+   "code": "sz.000983",
+   "name": "山西焦煤",
+   "floatMvYi": 355.95,
+   "signals": [
+    {
+     "date": "2026-10-29",
+     "volumeRatio": 3.17,
+     "llv60": 6.04,
+     "close": 6.49
+    }
+   ]
+  },
+  {
+   "code": "sh.600879",
+   "name": "航天电子",
+   "floatMvYi": 431.22,
+   "signals": [
+    {
+     "date": "2026-10-29",
+     "volumeRatio": 3.096,
+     "llv60": 12.13,
+     "close": 13.72
+    }
+   ]
+  },
+  {
+   "code": "sh.600548",
+   "name": "深高速",
+   "floatMvYi": 156.12,
+   "signals": [
+    {
+     "date": "2026-10-29",
+     "volumeRatio": 3.092,
+     "llv60": 7.93,
+     "close": 8.6
+    }
+   ]
+  },
+  {
+   "code": "sz.000410",
+   "name": "沈阳机床",
+   "floatMvYi": 104.66,
+   "signals": [
+    {
+     "date": "2026-10-22",
+     "volumeRatio": 3.509,
+     "llv60": 4.55,
+     "close": 4.91
+    },
+    {
+     "date": "2026-10-28",
+     "volumeRatio": 6.803,
+     "llv60": 4.68,
+     "close": 5.07
+    }
+   ]
+  },
+  {
+   "code": "sz.000755",
+   "name": "山西高速",
+   "floatMvYi": 70.43,
+   "signals": [
+    {
+     "date": "2026-10-28",
+     "volumeRatio": 6.454,
+     "llv60": 4.37,
+     "close": 4.82
+    }
+   ]
+  },
+  {
+   "code": "sz.000554",
+   "name": "泰山石油",
+   "floatMvYi": 21.74,
+   "signals": [
+    {
+     "date": "2026-10-28",
+     "volumeRatio": 5.813,
+     "llv60": 5.84,
+     "close": 6.63
+    }
+   ]
+  },
+  {
+   "code": "sh.600395",
+   "name": "盘江股份",
+   "floatMvYi": 105.4,
+   "signals": [
+    {
+     "date": "2026-10-28",
+     "volumeRatio": 4.362,
+     "llv60": 4.61,
+     "close": 5.11
+    }
+   ]
+  },
+  {
+   "code": "sh.600523",
+   "name": "贵航股份",
+   "floatMvYi": 48.49,
+   "signals": [
+    {
+     "date": "2026-10-28",
+     "volumeRatio": 4.222,
+     "llv60": 10.97,
+     "close": 12.05
+    }
+   ]
+  },
+  {
+   "code": "sh.600078",
+   "name": "澄星股份",
+   "floatMvYi": 59.83,
+   "signals": [
+    {
+     "date": "2026-10-28",
+     "volumeRatio": 4.159,
+     "llv60": 8.29,
+     "close": 9.42
+    }
+   ]
+  },
+  {
+   "code": "sh.601799",
+   "name": "星宇股份",
+   "floatMvYi": 189.06,
+   "signals": [
+    {
+     "date": "2026-10-28",
+     "volumeRatio": 4.051,
+     "llv60": 63.58,
+     "close": 70.79
+    }
+   ]
+  },
+  {
+   "code": "sz.002870",
+   "name": "香山股份",
+   "floatMvYi": 48.55,
+   "signals": [
+    {
+     "date": "2026-10-28",
+     "volumeRatio": 3.986,
+     "llv60": 35.06,
+     "close": 39.85
+    }
+   ]
+  },
+  {
+   "code": "sz.300831",
+   "name": "ST派瑞",
+   "floatMvYi": 21.79,
+   "signals": [
+    {
+     "date": "2026-10-28",
+     "volumeRatio": 3.863,
+     "llv60": 10.98,
+     "close": 11.64
+    }
+   ]
+  },
+  {
+   "code": "sz.002616",
+   "name": "长青集团",
+   "floatMvYi": 27.38,
+   "signals": [
+    {
+     "date": "2026-10-28",
+     "volumeRatio": 3.841,
+     "llv60": 4.44,
+     "close": 4.84
+    }
+   ]
+  },
+  {
+   "code": "sz.301246",
+   "name": "宏源药业",
+   "floatMvYi": 36.29,
+   "signals": [
+    {
+     "date": "2026-10-28",
+     "volumeRatio": 3.614,
+     "llv60": 14.86,
+     "close": 16.36
+    }
+   ]
+  },
+  {
+   "code": "sh.603072",
+   "name": "天和磁材",
+   "floatMvYi": 35.16,
+   "signals": [
+    {
+     "date": "2026-10-28",
+     "volumeRatio": 3.593,
+     "llv60": 26.95,
+     "close": 29.12
+    }
+   ]
+  },
+  {
+   "code": "sz.301175",
+   "name": "中科环保",
+   "floatMvYi": 34.76,
+   "signals": [
+    {
+     "date": "2026-10-28",
+     "volumeRatio": 3.435,
+     "llv60": 5.09,
+     "close": 5.56
+    }
+   ]
+  },
+  {
+   "code": "sz.002283",
+   "name": "天润工业",
+   "floatMvYi": 70.13,
+   "signals": [
+    {
+     "date": "2026-10-28",
+     "volumeRatio": 3.42,
+     "llv60": 6.7,
+     "close": 7.34
+    }
+   ]
+  },
+  {
+   "code": "sh.603699",
+   "name": "纽威股份",
+   "floatMvYi": 291.3,
+   "signals": [
+    {
+     "date": "2026-10-28",
+     "volumeRatio": 3.25,
+     "llv60": 34.28,
+     "close": 38.39
+    }
+   ]
+  },
+  {
+   "code": "sh.605050",
+   "name": "福然德",
+   "floatMvYi": 45.93,
+   "signals": [
+    {
+     "date": "2026-10-28",
+     "volumeRatio": 3.185,
+     "llv60": 9.38,
+     "close": 9.96
+    }
+   ]
+  },
+  {
+   "code": "sz.300042",
+   "name": "朗科科技",
+   "floatMvYi": 59.13,
+   "signals": [
+    {
+     "date": "2026-10-28",
+     "volumeRatio": 3.127,
+     "llv60": 27.13,
+     "close": 30.86
+    }
+   ]
+  },
+  {
+   "code": "sh.603816",
+   "name": "顾家家居",
+   "floatMvYi": 207.72,
+   "signals": [
+    {
+     "date": "2026-10-28",
+     "volumeRatio": 3.125,
+     "llv60": 22.01,
+     "close": 24.1
+    }
+   ]
+  },
+  {
+   "code": "sz.002275",
+   "name": "桂林三金",
+   "floatMvYi": 81.1,
+   "signals": [
+    {
+     "date": "2026-10-28",
+     "volumeRatio": 3.075,
+     "llv60": 11.67,
+     "close": 12.23
+    }
+   ]
+  },
+  {
+   "code": "sh.603579",
+   "name": "荣泰健康",
+   "floatMvYi": 27.99,
+   "signals": [
+    {
+     "date": "2026-10-28",
+     "volumeRatio": 3.055,
+     "llv60": 15.45,
+     "close": 17.26
+    }
+   ]
+  },
+  {
+   "code": "sh.603809",
+   "name": "豪能股份",
+   "floatMvYi": 82.18,
+   "signals": [
+    {
+     "date": "2026-10-28",
+     "volumeRatio": 3.045,
+     "llv60": 7.96,
+     "close": 9.06
+    }
+   ]
+  },
+  {
+   "code": "sz.000888",
+   "name": "峨眉山Ａ",
+   "floatMvYi": 52.9,
+   "signals": [
+    {
+     "date": "2026-10-27",
+     "volumeRatio": 7.139,
+     "llv60": 8.81,
+     "close": 10.1
+    }
+   ]
+  },
+  {
+   "code": "sz.002590",
+   "name": "万安科技",
+   "floatMvYi": 48.5,
+   "signals": [
+    {
+     "date": "2026-10-27",
+     "volumeRatio": 5.498,
+     "llv60": 8.81,
+     "close": 10.1
+    }
+   ]
+  },
+  {
+   "code": "sz.300962",
+   "name": "中金辐照",
+   "floatMvYi": 35.64,
+   "signals": [
+    {
+     "date": "2026-10-27",
+     "volumeRatio": 4.976,
+     "llv60": 11.88,
+     "close": 13.58
+    }
+   ]
+  },
+  {
+   "code": "sh.600617",
+   "name": "国新能源",
+   "floatMvYi": 56.28,
+   "signals": [
+    {
+     "date": "2026-10-27",
+     "volumeRatio": 4.529,
+     "llv60": 2.94,
+     "close": 3.26
+    }
+   ]
+  },
+  {
+   "code": "sh.600858",
+   "name": "银座股份",
+   "floatMvYi": 24.84,
+   "signals": [
+    {
+     "date": "2026-10-27",
+     "volumeRatio": 4.027,
+     "llv60": 4.46,
+     "close": 4.87
+    }
+   ]
+  },
+  {
+   "code": "sz.002170",
+   "name": "芭田股份",
+   "floatMvYi": 78.08,
+   "signals": [
+    {
+     "date": "2026-10-27",
+     "volumeRatio": 3.692,
+     "llv60": 9.38,
+     "close": 9.46
+    }
+   ]
+  },
+  {
+   "code": "sz.002749",
+   "name": "国光股份",
+   "floatMvYi": 42.89,
+   "signals": [
+    {
+     "date": "2026-10-27",
+     "volumeRatio": 3.607,
+     "llv60": 7.95,
+     "close": 8.0
+    }
+   ]
+  },
+  {
+   "code": "sz.002175",
+   "name": "*ST东智",
+   "floatMvYi": 28.6,
+   "signals": [
+    {
+     "date": "2026-10-27",
+     "volumeRatio": 3.394,
+     "llv60": 2.2,
+     "close": 2.41
+    }
+   ]
+  },
+  {
+   "code": "sz.300462",
+   "name": "ST华铭",
+   "floatMvYi": 14.26,
+   "signals": [
+    {
+     "date": "2026-10-27",
+     "volumeRatio": 3.275,
+     "llv60": 10.24,
+     "close": 10.84
+    }
+   ]
+  },
+  {
+   "code": "sz.301587",
+   "name": "中瑞股份",
+   "floatMvYi": 15.4,
+   "signals": [
+    {
+     "date": "2026-10-27",
+     "volumeRatio": 3.205,
+     "llv60": 18.5,
+     "close": 21.02
+    }
+   ]
+  },
+  {
+   "code": "sz.002726",
+   "name": "ST龙大",
+   "floatMvYi": 22.04,
+   "signals": [
+    {
+     "date": "2026-10-27",
+     "volumeRatio": 3.113,
+     "llv60": 1.71,
+     "close": 1.92
+    }
+   ]
+  },
+  {
+   "code": "sz.002034",
+   "name": "旺能环境",
+   "floatMvYi": 73.37,
+   "signals": [
+    {
+     "date": "2026-10-27",
+     "volumeRatio": 3.107,
+     "llv60": 13.01,
+     "close": 14.26
+    }
+   ]
+  },
+  {
+   "code": "sz.002222",
+   "name": "福晶科技",
+   "floatMvYi": 237.35,
+   "signals": [
+    {
+     "date": "2026-10-27",
+     "volumeRatio": 3.062,
+     "llv60": 44.32,
+     "close": 48.26
+    }
+   ]
+  },
+  {
+   "code": "sz.002311",
+   "name": "海大集团",
+   "floatMvYi": 809.4,
+   "signals": [
+    {
+     "date": "2026-10-27",
+     "volumeRatio": 3.021,
+     "llv60": 40.42,
+     "close": 44.82
+    }
+   ]
+  },
+  {
+   "code": "sz.002901",
+   "name": "大博医疗",
+   "floatMvYi": 117.42,
+   "signals": [
+    {
+     "date": "2026-10-26",
+     "volumeRatio": 3.805,
+     "llv60": 38.37,
+     "close": 42.15
+    }
+   ]
+  },
+  {
+   "code": "sz.002599",
+   "name": "盛通股份",
+   "floatMvYi": 24.43,
+   "signals": [
+    {
+     "date": "2026-10-26",
+     "volumeRatio": 3.726,
+     "llv60": 5.21,
+     "close": 5.92
+    }
+   ]
+  },
+  {
+   "code": "sz.300357",
+   "name": "我武生物",
+   "floatMvYi": 105.29,
+   "signals": [
+    {
+     "date": "2026-10-26",
+     "volumeRatio": 3.48,
+     "llv60": 18.48,
+     "close": 21.0
+    }
+   ]
+  },
+  {
+   "code": "sz.301459",
+   "name": "丰茂股份",
+   "floatMvYi": 8.2,
+   "signals": [
+    {
+     "date": "2026-10-26",
+     "volumeRatio": 3.29,
+     "llv60": 29.56,
+     "close": 33.02
+    }
+   ]
+  },
+  {
+   "code": "sz.002991",
+   "name": "甘源食品",
+   "floatMvYi": 19.44,
+   "signals": [
+    {
+     "date": "2026-10-26",
+     "volumeRatio": 3.226,
+     "llv60": 36.07,
+     "close": 39.21
+    }
+   ]
+  },
+  {
+   "code": "sz.002608",
+   "name": "江苏国信",
+   "floatMvYi": 280.71,
+   "signals": [
+    {
+     "date": "2026-10-26",
+     "volumeRatio": 3.206,
+     "llv60": 6.57,
+     "close": 7.03
+    }
+   ]
+  },
+  {
+   "code": "sz.002605",
+   "name": "姚记科技",
+   "floatMvYi": 59.84,
+   "signals": [
+    {
+     "date": "2026-10-26",
+     "volumeRatio": 3.184,
+     "llv60": 16.16,
+     "close": 18.06
+    }
+   ]
+  },
+  {
+   "code": "sz.300224",
+   "name": "正海磁材",
+   "floatMvYi": 120.14,
+   "signals": [
+    {
+     "date": "2026-10-26",
+     "volumeRatio": 3.043,
+     "llv60": 10.31,
+     "close": 11.84
+    }
+   ]
+  },
+  {
+   "code": "sz.002253",
+   "name": "川大智胜",
+   "floatMvYi": 16.06,
+   "signals": [
+    {
+     "date": "2026-10-23",
+     "volumeRatio": 5.044,
+     "llv60": 7.91,
+     "close": 8.62
+    }
+   ]
+  },
+  {
+   "code": "sz.300979",
+   "name": "华利集团",
+   "floatMvYi": 430.74,
+   "signals": [
+    {
+     "date": "2026-10-23",
+     "volumeRatio": 4.315,
+     "llv60": 31.03,
+     "close": 35.01
+    }
+   ]
+  },
+  {
+   "code": "sz.301584",
+   "name": "建发致新",
+   "floatMvYi": 43.88,
+   "signals": [
+    {
+     "date": "2026-10-23",
+     "volumeRatio": 4.213,
+     "llv60": 17.11,
+     "close": 18.64
+    }
+   ]
+  },
+  {
+   "code": "sz.300092",
+   "name": "科新机电",
+   "floatMvYi": 23.27,
+   "signals": [
+    {
+     "date": "2026-10-23",
+     "volumeRatio": 4.119,
+     "llv60": 9.68,
+     "close": 10.32
+    }
+   ]
+  },
+  {
+   "code": "sz.002373",
+   "name": "千方科技",
+   "floatMvYi": 107.45,
+   "signals": [
+    {
+     "date": "2026-10-23",
+     "volumeRatio": 4.013,
+     "llv60": 7.1,
+     "close": 7.84
+    }
+   ]
+  },
+  {
+   "code": "sz.002111",
+   "name": "威海广泰",
+   "floatMvYi": 37.24,
+   "signals": [
+    {
+     "date": "2026-10-23",
+     "volumeRatio": 3.948,
+     "llv60": 8.14,
+     "close": 8.34
+    }
+   ]
+  },
+  {
+   "code": "sz.300470",
+   "name": "中密控股",
+   "floatMvYi": 53.46,
+   "signals": [
+    {
+     "date": "2026-10-23",
+     "volumeRatio": 3.844,
+     "llv60": 26.0,
+     "close": 27.54
+    }
+   ]
+  },
+  {
+   "code": "sz.300184",
+   "name": "力源信息",
+   "floatMvYi": 97.61,
+   "signals": [
+    {
+     "date": "2026-10-23",
+     "volumeRatio": 3.751,
+     "llv60": 9.49,
+     "close": 10.84
+    }
+   ]
+  },
+  {
+   "code": "sz.001332",
+   "name": "锡装股份",
+   "floatMvYi": 14.81,
+   "signals": [
+    {
+     "date": "2026-10-23",
+     "volumeRatio": 3.658,
+     "llv60": 21.56,
+     "close": 22.91
+    }
+   ]
+  },
+  {
+   "code": "sz.003002",
+   "name": "壶化股份",
+   "floatMvYi": 23.6,
+   "signals": [
+    {
+     "date": "2026-10-23",
+     "volumeRatio": 3.607,
+     "llv60": 12.87,
+     "close": 13.85
+    }
+   ]
+  },
+  {
+   "code": "sz.300441",
+   "name": "鲍斯股份",
+   "floatMvYi": 40.07,
+   "signals": [
+    {
+     "date": "2026-10-23",
+     "volumeRatio": 3.393,
+     "llv60": 6.12,
+     "close": 6.86
+    }
+   ]
+  },
+  {
+   "code": "sz.000062",
+   "name": "深圳华强",
+   "floatMvYi": 211.67,
+   "signals": [
+    {
+     "date": "2026-10-23",
+     "volumeRatio": 3.229,
+     "llv60": 19.5,
+     "close": 21.26
+    }
+   ]
+  },
+  {
+   "code": "sh.600628",
+   "name": "新世界",
+   "floatMvYi": 41.08,
+   "signals": [
+    {
+     "date": "2026-10-23",
+     "volumeRatio": 3.161,
+     "llv60": 5.69,
+     "close": 6.53
+    }
+   ]
+  },
+  {
+   "code": "sh.603350",
+   "name": "安乃达",
+   "floatMvYi": 12.25,
+   "signals": [
+    {
+     "date": "2026-10-22",
+     "volumeRatio": 8.197,
+     "llv60": 25.87,
+     "close": 29.48
+    }
+   ]
+  },
+  {
+   "code": "sz.301199",
+   "name": "迈赫股份",
+   "floatMvYi": 33.11,
+   "signals": [
+    {
+     "date": "2026-10-22",
+     "volumeRatio": 6.681,
+     "llv60": 16.45,
+     "close": 18.44
+    }
+   ]
+  },
+  {
+   "code": "sz.002476",
+   "name": "新叶股份",
+   "floatMvYi": 25.34,
+   "signals": [
+    {
+     "date": "2026-10-22",
+     "volumeRatio": 5.829,
+     "llv60": 4.08,
+     "close": 4.69
+    }
+   ]
+  },
+  {
+   "code": "sz.002196",
+   "name": "方正电机",
+   "floatMvYi": 46.13,
+   "signals": [
+    {
+     "date": "2026-10-22",
+     "volumeRatio": 5.132,
+     "llv60": 9.02,
+     "close": 10.16
+    }
+   ]
+  },
+  {
+   "code": "sz.000065",
+   "name": "北方国际",
+   "floatMvYi": 99.26,
+   "signals": [
+    {
+     "date": "2026-10-22",
+     "volumeRatio": 4.966,
+     "llv60": 8.68,
+     "close": 9.86
+    }
+   ]
+  },
+  {
+   "code": "sz.002097",
+   "name": "山河智能",
+   "floatMvYi": 63.74,
+   "signals": [
+    {
+     "date": "2026-10-22",
+     "volumeRatio": 4.345,
+     "llv60": 6.39,
+     "close": 7.26
+    }
+   ]
+  },
+  {
+   "code": "sz.002823",
+   "name": "凯中精密",
+   "floatMvYi": 26.41,
+   "signals": [
+    {
+     "date": "2026-10-22",
+     "volumeRatio": 4.128,
+     "llv60": 11.637,
+     "close": 12.46
+    }
+   ]
+  },
+  {
+   "code": "sh.603370",
+   "name": "华新精科",
+   "floatMvYi": 20.96,
+   "signals": [
+    {
+     "date": "2026-10-16",
+     "volumeRatio": 3.318,
+     "llv60": 25.0,
+     "close": 26.65
+    },
+    {
+     "date": "2026-10-22",
+     "volumeRatio": 4.018,
+     "llv60": 25.0,
+     "close": 28.71
+    }
+   ]
+  },
+  {
+   "code": "sz.301622",
+   "name": "英思特",
+   "floatMvYi": 20.39,
+   "signals": [
+    {
+     "date": "2026-10-22",
+     "volumeRatio": 4.002,
+     "llv60": 31.77,
+     "close": 35.62
+    }
+   ]
+  },
+  {
+   "code": "sz.300084",
+   "name": "海默科技",
+   "floatMvYi": 41.08,
+   "signals": [
+    {
+     "date": "2026-10-22",
+     "volumeRatio": 3.972,
+     "llv60": 8.82,
+     "close": 9.76
+    }
+   ]
+  },
+  {
+   "code": "sz.300125",
+   "name": "聆达股份",
+   "floatMvYi": 24.96,
+   "signals": [
+    {
+     "date": "2026-10-22",
+     "volumeRatio": 3.781,
+     "llv60": 7.45,
+     "close": 8.07
+    }
+   ]
+  },
+  {
+   "code": "sh.600360",
+   "name": "华微电子",
+   "floatMvYi": 78.94,
+   "signals": [
+    {
+     "date": "2026-10-22",
+     "volumeRatio": 3.122,
+     "llv60": 8.707,
+     "close": 9.717
+    }
+   ]
+  },
+  {
+   "code": "sh.603194",
+   "name": "中力股份",
+   "floatMvYi": 53.54,
+   "signals": [
+    {
+     "date": "2026-10-22",
+     "volumeRatio": 3.088,
+     "llv60": 31.83,
+     "close": 33.2
+    }
+   ]
+  },
+  {
+   "code": "sz.002077",
+   "name": "大港股份",
+   "floatMvYi": 65.23,
+   "signals": [
+    {
+     "date": "2026-10-22",
+     "volumeRatio": 3.086,
+     "llv60": 11.15,
+     "close": 11.89
+    }
+   ]
+  },
+  {
+   "code": "sz.300660",
+   "name": "江苏雷利",
+   "floatMvYi": 130.71,
+   "signals": [
+    {
+     "date": "2026-10-22",
+     "volumeRatio": 3.02,
+     "llv60": 21.11,
+     "close": 24.25
+    }
+   ]
+  },
+  {
+   "code": "sh.605218",
+   "name": "伟时电子",
+   "floatMvYi": 28.94,
+   "signals": [
+    {
+     "date": "2026-10-22",
+     "volumeRatio": 3.004,
+     "llv60": 11.94,
+     "close": 13.2
+    }
+   ]
+  },
+  {
+   "code": "sz.002112",
+   "name": "三变科技",
+   "floatMvYi": 32.16,
+   "signals": [
+    {
+     "date": "2026-10-21",
+     "volumeRatio": 7.818,
+     "llv60": 12.8,
+     "close": 14.43
+    }
+   ]
+  },
+  {
+   "code": "sh.603368",
+   "name": "柳药集团",
+   "floatMvYi": 64.67,
+   "signals": [
+    {
+     "date": "2026-10-21",
+     "volumeRatio": 4.37,
+     "llv60": 14.96,
+     "close": 16.82
+    }
+   ]
+  },
+  {
+   "code": "sz.000518",
+   "name": "四环生物",
+   "floatMvYi": 30.99,
+   "signals": [
+    {
+     "date": "2026-10-21",
+     "volumeRatio": 4.027,
+     "llv60": 3.18,
+     "close": 3.63
+    }
+   ]
+  },
+  {
+   "code": "sz.002177",
+   "name": "御银股份",
+   "floatMvYi": 34.09,
+   "signals": [
+    {
+     "date": "2026-10-21",
+     "volumeRatio": 3.995,
+     "llv60": 5.13,
+     "close": 5.66
+    }
+   ]
+  },
+  {
+   "code": "sz.002865",
+   "name": "钧达股份",
+   "floatMvYi": 91.64,
+   "signals": [
+    {
+     "date": "2026-10-21",
+     "volumeRatio": 3.644,
+     "llv60": 32.0,
+     "close": 34.65
+    }
+   ]
+  },
+  {
+   "code": "sh.600271",
+   "name": "航天信息",
+   "floatMvYi": 126.92,
+   "signals": [
+    {
+     "date": "2026-10-21",
+     "volumeRatio": 3.521,
+     "llv60": 6.46,
+     "close": 7.4
+    }
+   ]
+  },
+  {
+   "code": "sh.603869",
+   "name": "ST智知",
+   "floatMvYi": 36.84,
+   "signals": [
+    {
+     "date": "2026-10-21",
+     "volumeRatio": 3.342,
+     "llv60": 7.33,
+     "close": 8.19
+    }
+   ]
+  },
+  {
+   "code": "sh.603131",
+   "name": "上海沪工",
+   "floatMvYi": 53.23,
+   "signals": [
+    {
+     "date": "2026-10-21",
+     "volumeRatio": 3.199,
+     "llv60": 12.65,
+     "close": 13.55
+    }
+   ]
+  },
+  {
+   "code": "sz.300212",
+   "name": "*ST易录",
+   "floatMvYi": 50.75,
+   "signals": [
+    {
+     "date": "2026-10-21",
+     "volumeRatio": 3.156,
+     "llv60": 7.0,
+     "close": 7.86
+    }
+   ]
+  },
+  {
+   "code": "sz.001388",
+   "name": "信通电子",
+   "floatMvYi": 29.72,
+   "signals": [
+    {
+     "date": "2026-10-20",
+     "volumeRatio": 5.294,
+     "llv60": 18.01,
+     "close": 20.37
+    }
+   ]
+  },
+  {
+   "code": "sh.601933",
+   "name": "永辉超市",
+   "floatMvYi": 257.93,
+   "signals": [
+    {
+     "date": "2026-10-20",
+     "volumeRatio": 4.211,
+     "llv60": 2.82,
+     "close": 2.98
+    }
+   ]
+  },
+  {
+   "code": "sz.002526",
+   "name": "山东矿机",
+   "floatMvYi": 50.66,
+   "signals": [
+    {
+     "date": "2026-10-20",
+     "volumeRatio": 3.912,
+     "llv60": 2.44,
+     "close": 2.64
+    }
+   ]
+  },
+  {
+   "code": "sz.301255",
+   "name": "通力科技",
+   "floatMvYi": 27.0,
+   "signals": [
+    {
+     "date": "2026-10-20",
+     "volumeRatio": 3.328,
+     "llv60": 16.82,
+     "close": 18.86
+    }
+   ]
+  },
+  {
+   "code": "sz.002241",
+   "name": "歌尔股份",
+   "floatMvYi": 765.4,
+   "signals": [
+    {
+     "date": "2026-10-20",
+     "volumeRatio": 3.213,
+     "llv60": 19.352,
+     "close": 21.372
+    }
+   ]
+  },
+  {
+   "code": "sz.300815",
+   "name": "玉禾田",
+   "floatMvYi": 63.77,
+   "signals": [
+    {
+     "date": "2026-10-20",
+     "volumeRatio": 3.154,
+     "llv60": 13.91,
+     "close": 15.6
+    }
+   ]
+  },
+  {
+   "code": "sh.603160",
+   "name": "汇顶科技",
+   "floatMvYi": 274.67,
+   "signals": [
+    {
+     "date": "2026-10-20",
+     "volumeRatio": 3.101,
+     "llv60": 46.59,
+     "close": 52.11
+    }
+   ]
+  },
+  {
+   "code": "sh.603738",
+   "name": "泰晶科技",
+   "floatMvYi": 94.74,
+   "signals": [
+    {
+     "date": "2026-10-20",
+     "volumeRatio": 3.007,
+     "llv60": 25.06,
+     "close": 28.23
+    }
+   ]
+  },
+  {
+   "code": "sz.000860",
+   "name": "顺鑫农业",
+   "floatMvYi": 88.79,
+   "signals": [
+    {
+     "date": "2026-10-19",
+     "volumeRatio": 4.9,
+     "llv60": 9.99,
+     "close": 10.97
+    }
+   ]
+  },
+  {
+   "code": "sz.002777",
+   "name": "久远银海",
+   "floatMvYi": 48.34,
+   "signals": [
+    {
+     "date": "2026-10-19",
+     "volumeRatio": 4.642,
+     "llv60": 11.74,
+     "close": 13.42
+    }
+   ]
+  },
+  {
+   "code": "sz.300773",
+   "name": "拉卡拉",
+   "floatMvYi": 144.31,
+   "signals": [
+    {
+     "date": "2026-10-19",
+     "volumeRatio": 4.598,
+     "llv60": 13.72,
+     "close": 15.03
+    }
+   ]
+  },
+  {
+   "code": "sz.300288",
+   "name": "朗玛信息",
+   "floatMvYi": 23.72,
+   "signals": [
+    {
+     "date": "2026-10-19",
+     "volumeRatio": 3.547,
+     "llv60": 8.73,
+     "close": 10.02
+    }
+   ]
+  },
+  {
+   "code": "sh.600422",
+   "name": "昆药集团",
+   "floatMvYi": 63.28,
+   "signals": [
+    {
+     "date": "2026-10-19",
+     "volumeRatio": 3.516,
+     "llv60": 7.97,
+     "close": 8.82
+    }
+   ]
+  },
+  {
+   "code": "sz.002117",
+   "name": "东港股份",
+   "floatMvYi": 35.81,
+   "signals": [
+    {
+     "date": "2026-10-19",
+     "volumeRatio": 3.057,
+     "llv60": 7.4,
+     "close": 8.06
+    }
+   ]
+  },
+  {
+   "code": "sh.603193",
+   "name": "润本股份",
+   "floatMvYi": 66.96,
+   "signals": [
+    {
+     "date": "2026-10-16",
+     "volumeRatio": 6.289,
+     "llv60": 18.27,
+     "close": 20.21
+    }
+   ]
+  },
+  {
+   "code": "sz.300900",
+   "name": "广联航空",
+   "floatMvYi": 55.09,
+   "signals": [
+    {
+     "date": "2026-10-16",
+     "volumeRatio": 5.256,
+     "llv60": 18.68,
+     "close": 21.28
+    }
+   ]
+  },
+  {
+   "code": "sh.600860",
+   "name": "京城股份",
+   "floatMvYi": 36.1,
+   "signals": [
+    {
+     "date": "2026-10-16",
+     "volumeRatio": 4.751,
+     "llv60": 7.17,
+     "close": 7.91
+    }
+   ]
+  },
+  {
+   "code": "sz.300777",
+   "name": "中简科技",
+   "floatMvYi": 78.21,
+   "signals": [
+    {
+     "date": "2026-10-16",
+     "volumeRatio": 4.705,
+     "llv60": 18.3,
+     "close": 20.86
+    }
+   ]
+  },
+  {
+   "code": "sh.600585",
+   "name": "海螺水泥",
+   "floatMvYi": 709.98,
+   "signals": [
+    {
+     "date": "2026-10-16",
+     "volumeRatio": 4.427,
+     "llv60": 16.56,
+     "close": 18.64
+    }
+   ]
+  },
+  {
+   "code": "sz.300699",
+   "name": "光威复材",
+   "floatMvYi": 168.79,
+   "signals": [
+    {
+     "date": "2026-10-16",
+     "volumeRatio": 4.046,
+     "llv60": 22.16,
+     "close": 24.32
+    }
+   ]
+  },
+  {
+   "code": "sz.002530",
+   "name": "金财互联",
+   "floatMvYi": 47.91,
+   "signals": [
+    {
+     "date": "2026-10-16",
+     "volumeRatio": 3.845,
+     "llv60": 6.45,
+     "close": 7.24
+    }
+   ]
+  },
+  {
+   "code": "sz.301048",
+   "name": "金鹰重工",
+   "floatMvYi": 50.72,
+   "signals": [
+    {
+     "date": "2026-10-16",
+     "volumeRatio": 3.578,
+     "llv60": 8.35,
+     "close": 9.2
+    }
+   ]
+  },
+  {
+   "code": "sh.600732",
+   "name": "爱旭股份",
+   "floatMvYi": 257.89,
+   "signals": [
+    {
+     "date": "2026-10-16",
+     "volumeRatio": 3.556,
+     "llv60": 9.93,
+     "close": 11.2
+    }
+   ]
+  },
+  {
+   "code": "sh.605018",
+   "name": "长华集团",
+   "floatMvYi": 48.7,
+   "signals": [
+    {
+     "date": "2026-10-16",
+     "volumeRatio": 3.361,
+     "llv60": 10.0,
+     "close": 11.03
+    }
+   ]
+  },
+  {
+   "code": "sh.603334",
+   "name": "丰倍生物",
+   "floatMvYi": 13.17,
+   "signals": [
+    {
+     "date": "2026-10-16",
+     "volumeRatio": 3.351,
+     "llv60": 29.41,
+     "close": 32.1
+    }
+   ]
+  },
+  {
+   "code": "sz.300228",
+   "name": "富瑞特装",
+   "floatMvYi": 32.05,
+   "signals": [
+    {
+     "date": "2026-10-16",
+     "volumeRatio": 3.204,
+     "llv60": 6.2,
+     "close": 6.65
+    }
+   ]
+  },
+  {
+   "code": "sz.300492",
+   "name": "华图山鼎",
+   "floatMvYi": 50.66,
+   "signals": [
+    {
+     "date": "2026-10-16",
+     "volumeRatio": 3.169,
+     "llv60": 19.32,
+     "close": 21.39
+    }
+   ]
+  },
+  {
+   "code": "sz.002389",
+   "name": "航天彩虹",
+   "floatMvYi": 176.77,
+   "signals": [
+    {
+     "date": "2026-10-16",
+     "volumeRatio": 3.147,
+     "llv60": 16.83,
+     "close": 18.91
+    }
+   ]
+  },
+  {
+   "code": "sz.002903",
+   "name": "宇环数控",
+   "floatMvYi": 28.48,
+   "signals": [
+    {
+     "date": "2026-10-16",
+     "volumeRatio": 3.032,
+     "llv60": 20.05,
+     "close": 22.93
+    }
+   ]
+  },
+  {
+   "code": "sz.301089",
+   "name": "拓新药业",
+   "floatMvYi": 18.42,
+   "signals": [
+    {
+     "date": "2026-10-16",
+     "volumeRatio": 3.002,
+     "llv60": 20.8,
+     "close": 23.7
+    }
+   ]
+  },
+  {
+   "code": "sz.301239",
+   "name": "普瑞眼科",
+   "floatMvYi": 48.65,
+   "signals": [
+    {
+     "date": "2026-10-15",
+     "volumeRatio": 5.528,
+     "llv60": 29.322,
+     "close": 31.82
+    }
+   ]
+  },
+  {
+   "code": "sh.601136",
+   "name": "首创证券",
+   "floatMvYi": 348.5,
+   "signals": [
+    {
+     "date": "2026-10-15",
+     "volumeRatio": 4.249,
+     "llv60": 13.6,
+     "close": 14.45
+    }
+   ]
+  },
+  {
+   "code": "sz.002350",
+   "name": "北京科锐",
+   "floatMvYi": 58.94,
+   "signals": [
+    {
+     "date": "2026-10-15",
+     "volumeRatio": 3.441,
+     "llv60": 12.15,
+     "close": 13.37
+    }
+   ]
+  },
+  {
+   "code": "sz.000400",
+   "name": "许继电气",
+   "floatMvYi": 248.59,
+   "signals": [
+    {
+     "date": "2026-10-15",
+     "volumeRatio": 3.44,
+     "llv60": 19.586,
+     "close": 21.88
+    }
+   ]
+  },
+  {
+   "code": "sz.300896",
+   "name": "爱美客",
+   "floatMvYi": 189.08,
+   "signals": [
+    {
+     "date": "2026-10-15",
+     "volumeRatio": 3.159,
+     "llv60": 87.2,
+     "close": 94.8
+    }
+   ]
+  },
+  {
+   "code": "sz.002167",
+   "name": "东方锆业",
+   "floatMvYi": 100.61,
+   "signals": [
+    {
+     "date": "2026-10-15",
+     "volumeRatio": 3.149,
+     "llv60": 12.96,
+     "close": 13.61
+    }
+   ]
+  },
+  {
+   "code": "sz.300497",
+   "name": "富祥股份",
+   "floatMvYi": 62.05,
+   "signals": [
+    {
+     "date": "2026-10-15",
+     "volumeRatio": 3.103,
+     "llv60": 13.52,
+     "close": 14.18
+    }
+   ]
+  },
+  {
+   "code": "sz.002829",
+   "name": "星网宇达",
+   "floatMvYi": 22.83,
+   "signals": [
+    {
+     "date": "2026-10-15",
+     "volumeRatio": 3.087,
+     "llv60": 14.71,
+     "close": 15.12
+    }
+   ]
+  },
+  {
+   "code": "sz.002571",
+   "name": "德力股份",
+   "floatMvYi": 28.19,
+   "signals": [
+    {
+     "date": "2026-10-15",
+     "volumeRatio": 3.042,
+     "llv60": 9.22,
+     "close": 10.01
+    }
+   ]
+  },
+  {
+   "code": "sh.603359",
+   "name": "*ST东珠",
+   "floatMvYi": 5.62,
+   "signals": [
+    {
+     "date": "2026-10-14",
+     "volumeRatio": 5.153,
+     "llv60": 1.85,
+     "close": 2.08
+    }
+   ]
+  },
+  {
+   "code": "sh.603173",
+   "name": "福斯达",
+   "floatMvYi": 50.13,
+   "signals": [
+    {
+     "date": "2026-10-14",
+     "volumeRatio": 4.859,
+     "llv60": 27.7,
+     "close": 30.13
+    }
+   ]
+  },
+  {
+   "code": "sh.603861",
+   "name": "白云电器",
+   "floatMvYi": 53.12,
+   "signals": [
+    {
+     "date": "2026-10-14",
+     "volumeRatio": 3.659,
+     "llv60": 10.16,
+     "close": 11.46
+    }
+   ]
+  },
+  {
+   "code": "sh.600025",
+   "name": "华能水电",
+   "floatMvYi": 2038.24,
+   "signals": [
+    {
+     "date": "2026-10-14",
+     "volumeRatio": 3.139,
+     "llv60": 9.5,
+     "close": 10.53
+    }
+   ]
+  },
+  {
+   "code": "sh.600968",
+   "name": "海油发展",
+   "floatMvYi": 423.88,
+   "signals": [
+    {
+     "date": "2026-10-14",
+     "volumeRatio": 3.088,
+     "llv60": 3.58,
+     "close": 4.08
+    }
+   ]
+  },
+  {
+   "code": "sz.300881",
+   "name": "盛德鑫泰",
+   "floatMvYi": 14.35,
+   "signals": [
+    {
+     "date": "2026-10-13",
+     "volumeRatio": 5.228,
+     "llv60": 27.252,
+     "close": 30.352
+    }
+   ]
+  },
+  {
+   "code": "sh.603153",
+   "name": "上海建科",
+   "floatMvYi": 52.17,
+   "signals": [
+    {
+     "date": "2026-10-13",
+     "volumeRatio": 3.771,
+     "llv60": 12.42,
+     "close": 14.09
+    }
+   ]
+  },
+  {
+   "code": "sz.000799",
+   "name": "酒鬼酒",
+   "floatMvYi": 110.17,
+   "signals": [
+    {
+     "date": "2026-10-13",
+     "volumeRatio": 3.769,
+     "llv60": 35.6,
+     "close": 37.73
+    }
+   ]
+  },
+  {
+   "code": "sh.600779",
+   "name": "水井坊",
+   "floatMvYi": 134.13,
+   "signals": [
+    {
+     "date": "2026-10-13",
+     "volumeRatio": 3.764,
+     "llv60": 25.33,
+     "close": 28.25
+    }
+   ]
+  },
+  {
+   "code": "sz.300377",
+   "name": "赢时胜",
+   "floatMvYi": 88.19,
+   "signals": [
+    {
+     "date": "2026-10-13",
+     "volumeRatio": 3.627,
+     "llv60": 12.33,
+     "close": 14.04
+    }
+   ]
+  },
+  {
+   "code": "sh.603890",
+   "name": "春秋电子",
+   "floatMvYi": 60.58,
+   "signals": [
+    {
+     "date": "2026-10-13",
+     "volumeRatio": 3.556,
+     "llv60": 13.75,
+     "close": 15.09
+    }
+   ]
+  },
+  {
+   "code": "sz.300380",
+   "name": "安硕信息",
+   "floatMvYi": 32.22,
+   "signals": [
+    {
+     "date": "2026-10-13",
+     "volumeRatio": 3.496,
+     "llv60": 25.69,
+     "close": 28.91
+    }
+   ]
+  },
+  {
+   "code": "sh.600197",
+   "name": "伊力特",
+   "floatMvYi": 43.72,
+   "signals": [
+    {
+     "date": "2026-10-13",
+     "volumeRatio": 3.439,
+     "llv60": 9.14,
+     "close": 9.44
+    }
+   ]
+  },
+  {
+   "code": "sh.600702",
+   "name": "舍得酒业",
+   "floatMvYi": 106.79,
+   "signals": [
+    {
+     "date": "2026-10-13",
+     "volumeRatio": 3.236,
+     "llv60": 31.72,
+     "close": 33.48
+    }
+   ]
+  },
+  {
+   "code": "sz.002677",
+   "name": "浙江美大",
+   "floatMvYi": 30.57,
+   "signals": [
+    {
+     "date": "2026-10-13",
+     "volumeRatio": 3.229,
+     "llv60": 5.74,
+     "close": 6.25
+    }
+   ]
+  },
+  {
+   "code": "sh.600550",
+   "name": "保变电气",
+   "floatMvYi": 168.32,
+   "signals": [
+    {
+     "date": "2026-10-12",
+     "volumeRatio": 5.262,
+     "llv60": 10.0,
+     "close": 10.94
+    }
+   ]
+  },
+  {
+   "code": "sz.002549",
+   "name": "凯美特气",
+   "floatMvYi": 76.78,
+   "signals": [
+    {
+     "date": "2026-10-12",
+     "volumeRatio": 5.221,
+     "llv60": 11.97,
+     "close": 12.95
+    }
+   ]
+  },
+  {
+   "code": "sz.000601",
+   "name": "韶能股份",
+   "floatMvYi": 56.6,
+   "signals": [
+    {
+     "date": "2026-10-12",
+     "volumeRatio": 4.518,
+     "llv60": 5.84,
+     "close": 6.38
+    }
+   ]
+  },
+  {
+   "code": "sh.603025",
+   "name": "大豪科技",
+   "floatMvYi": 133.1,
+   "signals": [
+    {
+     "date": "2026-10-12",
+     "volumeRatio": 3.661,
+     "llv60": 12.06,
+     "close": 13.64
+    }
+   ]
+  },
+  {
+   "code": "sz.300882",
+   "name": "万胜智能",
+   "floatMvYi": 31.32,
+   "signals": [
+    {
+     "date": "2026-10-12",
+     "volumeRatio": 3.314,
+     "llv60": 12.61,
+     "close": 13.88
+    }
+   ]
+  }
+ ]
+}

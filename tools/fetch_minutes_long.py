@@ -109,7 +109,7 @@ def fetch(code: str, segs: list[tuple[str, str]]) -> list[list]:
 def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--start", default="2026-01-01")
-    ap.add_argument("--end", default="2026-11-12")
+    ap.add_argument("--end", default="2026-11-13")
     ap.add_argument("--force", action="store_true", help="忽略缓存全部重拉")
     args = ap.parse_args()
 

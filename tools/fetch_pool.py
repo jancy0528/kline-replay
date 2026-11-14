@@ -41,7 +41,7 @@ HEADERS = {
     'Referer': 'https://gu.qq.com/',
 }
 BAO_FIELDS = 'date,open,high,low,close,volume,amount,tradestatus,isST'
-START, END = '2015-01-01', '2026-11-11'
+START, END = '2015-01-01', '2026-11-13'
 
 
 def http_get(url: str, timeout: int = 20, retries: int = 5) -> str:
@@ -95,7 +95,9 @@ def build_daily(codes: list[str], force: bool) -> dict[str, list[list]]:
     print(f'[daily] 缓存 {len(cache)} 只，需拉 {len(todo)} 只', flush=True)
     for i, code in enumerate(todo, 1):
         c, rows = fetch_daily(code)
-        if len(rows) < 500:
+        # 次新股（上市约一年）也能进训练池：一年期分钟线已有 208 个交易日，
+        # 足够 150 天对局；只是左拉看历史位置时只能看到上市以来。
+        if len(rows) < 250:
             print(f'  ! {c} 只有 {len(rows)} 根，跳过', flush=True)
             continue
         cache[c] = rows

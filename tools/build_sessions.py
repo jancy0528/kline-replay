@@ -12,10 +12,11 @@
   4. **一局 150 个完整交易日**：训练按「日」决策，每次推进给完整一天，
      分时整屏换一天、日K 多一根。150 天每天都要有真实分时，因此分钟线
      用 BaoStock 的一年期窗口（新浪只给近 21 个交易日，不够用）。
-  5. **训练局由选股信号驱动**：`select_stocks.py` 按用户的三层规则
-     （基础池 / 量能 / 周线 MA5>MA10>MA20）挑出标的与信号日；长窗口下
-     再用同一套核心技术条件在日线历史里补一批信号日，让 150 天里的
-     形态不都挤在末尾。每局保证窗口内含一个信号日。
+  5. **训练局由选股信号驱动**：`select_stocks.py` 按当前生效的选股模式
+     （默认「底部三倍量」：V>=REF(V,1)*3 且 C<=LLV(L,60)*1.15 且 C>O；
+     旧三层规则代码保留但停用）挑出标的与信号日；长窗口下再用**同一套
+     公式**在日线历史里补一批信号日，让 150 天里的形态不都挤在末尾。
+     每局保证窗口内含一个信号日。
   6. 日线带完整历史（2015 年起），供缩小左拉判断当前价的历史位置；
      分钟线裁剪到对局实际用到的区间，控制数据包体积。
 
@@ -133,13 +134,12 @@ def align_symbol(code: str, daily: list[list], minutes: list[list]) -> dict | No
     return {"day": day_bars, "m5": aligned, "drift": max_drift}
 
 
-def technical_signals(daily: list[list], since: str) -> set[str]:
-    """补充历史技术信号日，让 150 天窗口里的形态不都挤在末尾。
+def technical_signals_legacy(daily: list[list], since: str) -> set[str]:
+    """【已停用·代码保留】旧三层规则的历史技术信号：放量 ≥2.5 倍 + 周线多头排列。
 
-    与 select_stocks.py 用的是同一套核心技术条件（放量 ≥2.5 倍 +
-    周线 MA5>MA10>MA20），差别仅在：日线缓存没有成交额字段，用
-    「收盘价 × 成交量」作代理；基础池过滤不回溯，因为标的本身已经是
-    从那套过滤里选出来的 18 只。MA 与放量分母都只取已实现的数据。
+    与 select_stocks.py 旧模式用的是同一套核心技术条件，差别仅在：日线缓存
+    没有成交额字段，用「收盘价 × 成交量」作代理；基础池过滤不回溯，因为
+    标的本身已经是从那套过滤里选出来的。MA 与放量分母都只取已实现的数据。
     """
     weeks: OrderedDict[tuple[int, int], list[list]] = OrderedDict()
     for b in daily:
@@ -164,6 +164,39 @@ def technical_signals(daily: list[list], since: str) -> set[str]:
         if base > 0 and amount[i] / base >= 2.5:
             out.add(b[0])
     return out
+
+
+BOTTOM_LOOKBACK = 60
+VOLUME_MULTIPLE = 3.0
+BOTTOM_BUFFER = 0.15
+
+
+def technical_signals_bottom3x(daily: list[list], since: str) -> set[str]:
+    """【当前生效】用同一套「底部三倍量」公式在完整日线历史里补信号日。
+
+    bars.ts 是 BaoStock 顺序 [date, open, high, low, close, volume]：
+    O=b[1] H=b[2] L=b[3] C=b[4] V=b[5]（与 select_stocks.py 的腾讯顺序不同）。
+    LLV(L,60) 含当日，与通达信口径、也与选股脚本保持一致。
+    """
+    out: set[str] = set()
+    for i, b in enumerate(daily):
+        if b[0] < since or i < BOTTOM_LOOKBACK:
+            continue
+        v, v_prev = b[5], daily[i - 1][5]
+        if v <= 0 or v_prev <= 0 or v < v_prev * VOLUME_MULTIPLE:
+            continue
+        lo = min(daily[j][3] for j in range(i - BOTTOM_LOOKBACK + 1, i + 1))
+        c, o = b[4], b[1]
+        if lo <= 0 or c > lo * (1 + BOTTOM_BUFFER) or not c > o:
+            continue
+        out.add(b[0])
+    return out
+
+
+def technical_signals(daily: list[list], since: str, mode: str = 'bottom3x') -> set[str]:
+    if mode == 'legacy':
+        return technical_signals_legacy(daily, since)
+    return technical_signals_bottom3x(daily, since)
 
 
 def make_games(symbols: dict, signals: dict[str, list[str]],
@@ -257,20 +290,22 @@ def main() -> int:
     minutes = load_json(minute_file, {}).get("m5") or {}
     selection = load_json(SELECTION_FILE, {})
     fund = load_json(FUND_FILE, {})
+    mode = selection.get("mode", "bottom3x")
     signals: dict[str, list[str]] = {
         p["code"]: [s["date"] for s in p["signals"]]
         for p in selection.get("symbols", [])
     }
-    # 长窗口下补一批历史技术信号日，避免 150 天里的形态全挤在最后 20 天
+    # 长窗口下用「当前生效的同一套公式」补历史信号日，避免形态全挤在末尾
     first_minute_day = min((str(b[0])[:10] for v in minutes.values() for b in v),
                            default="2026-01-01")
-    extra = {c: technical_signals(bars, first_minute_day)
+    extra = {c: technical_signals(bars, first_minute_day, mode)
              for c, bars in daily.items() if c in minutes}
+    print(f"[mode] {mode}（旧三层规则代码保留但停用）")
     print(f"[source] 日线 {len(daily)} 只 / {sum(len(v) for v in daily.values())} 根")
     print(f"[source] 5 分钟线 {minute_file.name} · {len(minutes)} 只 / "
           f"{sum(len(v) for v in minutes.values())} 根")
     print(f"[source] 选股命中 {len(signals)} 只 / {sum(len(v) for v in signals.values())} 个信号日")
-    print(f"[source] 历史技术信号补充 {sum(len(v) for v in extra.values())} 个")
+    print(f"[source] 历史技术信号补充 {sum(len(v) for v in extra.values())} 个（{mode} 同一公式）")
 
     symbols: dict[str, dict] = {}
     for code, daily_bars in daily.items():
@@ -299,7 +334,7 @@ def main() -> int:
     history_bars = sum(len(v["day"]) for v in symbols.values())
     print(f"[trim] 分钟线保留 {kept_minutes} 根 / {len(symbols)} 只")
     body = {
-        "version": 7,
+        "version": 8,
         "windows": WINDOWS,
         "gameDays": GAME_DAYS,
         "symbols": symbols,
@@ -311,10 +346,14 @@ def main() -> int:
     (OUT_DIR / filename).write_bytes(raw)
 
     manifest = {
-        "version": 7,
+        "version": 8,
         "generatedAt": datetime.now(timezone.utc).isoformat(timespec="seconds"),
         "source": "baostock 前复权日线（2015 起完整历史） + baostock 一年期 5 分钟线 + 腾讯股本快照",
         "adjust": "前复权，逐日按收盘价对齐",
+        "selectionMode": mode,
+        "selectionFormula": selection.get("rules", {}).get(
+            "formula",
+            "legacy: 放量≥2.5 + 周线 MA5>MA10>MA20"),
         "dataFile": filename,
         "bytes": len(raw),
         "symbols": len(symbols),

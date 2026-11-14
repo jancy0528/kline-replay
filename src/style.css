@@ -1065,6 +1065,15 @@ h1 {
 .more-ops-body .btn-row { gap: 8px; }
 .more-ops-body .btn { min-height: 38px; font-size: 12px; }
 
+/* 选股模式查验行：默认折叠，不占首屏、不泄露标的身份 */
+.mode-note {
+  color: var(--muted);
+  font-size: 10px;
+  line-height: 1.6;
+  word-break: break-all;
+}
+.mode-note b { color: var(--text); font-weight: 600; }
+
 /* 同步设置 */
 .sync-state {
   display: flex;

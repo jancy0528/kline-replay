@@ -584,9 +584,12 @@ function moreOps(intraday: boolean): string {
       <button class="btn ghost" data-action="drawHLine">水平线</button>
     </div>
     <div class="btn-row"><button class="btn ghost" data-action="clearDraw">清除画线</button></div>`
+  const mode = manifest?.selectionMode === 'legacy' ? '旧三层规则（legacy）' : '底部三倍量'
+  const formula = manifest?.selectionFormula ?? ''
   return `<details class="more-ops">
     <summary>更多操作 <span>全仓 / 清仓 / 自动播放 / 画线 / 复盘</span> ▾</summary>
     <div class="more-ops-body">
+      <div class="mode-note">当前选股模式：<b>${mode}</b>${formula ? `<br>${formula}` : ''}</div>
       <div class="btn-row">
         <button class="btn" data-action="buyAll">全仓买</button>
         <button class="btn" data-action="sellAll">清仓</button>
