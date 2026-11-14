@@ -1073,6 +1073,9 @@ h1 {
   word-break: break-all;
 }
 .mode-note b { color: var(--text); font-weight: 600; }
+.mode-note .mode-usage { color: var(--accent); }
+.mode-note .mode-policy { display: inline-block; margin-top: 4px; padding-top: 4px;
+  border-top: 1px dashed rgba(139, 149, 171, .35); color: var(--muted); }
 
 /* 同步设置 */
 .sync-state {

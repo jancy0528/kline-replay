@@ -12,9 +12,14 @@
 输出 src/data/raw/minutes_long.json，结构与 minutes.json 一致：
     {"m5": {"sh.600000": [["2026-04-01 09:35", o, h, l, c, v], ...]}}
 
+2026-11-15 用途修正：选股改为回看过去 250 个交易日的历史信号，训练要
+走完「信号后一整轮完整周期」，因此分钟线不能只覆盖今年，必须往前扩到
+能容纳 2025 年下半年的信号日及其后续 150 个交易日。默认起点改为
+2025-08-01，并校验缓存首日，防止命中旧的短缓存导致窗口不足。
+
 用法：
     .venv/Scripts/python.exe tools/fetch_minutes_long.py
-    .venv/Scripts/python.exe tools/fetch_minutes_long.py --start 2025-07-01
+    .venv/Scripts/python.exe tools/fetch_minutes_long.py --start 2025-08-01
 """
 from __future__ import annotations
 
@@ -108,7 +113,7 @@ def fetch(code: str, segs: list[tuple[str, str]]) -> list[list]:
 
 def main() -> int:
     ap = argparse.ArgumentParser()
-    ap.add_argument("--start", default="2026-01-01")
+    ap.add_argument("--start", default="2025-08-01")
     ap.add_argument("--end", default="2026-11-13")
     ap.add_argument("--force", action="store_true", help="忽略缓存全部重拉")
     args = ap.parse_args()
@@ -125,9 +130,14 @@ def main() -> int:
 
     out: dict[str, list[list]] = {}
     for i, code in enumerate(codes, 1):
-        if code in cache and len(cache[code]) > 5000:
-            out[code] = cache[code]
-            print(f"[{i}/{len(codes)}] {code} 命中缓存 {len(out[code])} 根", flush=True)
+        cached = cache.get(code)
+        # 缓存必须「够长」且「起点够早」：历史信号日要落在缓存范围内，
+        # 否则会用旧的一年内短缓存，导致 2025 年的信号无法成局。
+        if (cached and len(cached) > 5000
+                and str(cached[0][0])[:10] <= args.start):
+            out[code] = cached
+            print(f"[{i}/{len(codes)}] {code} 命中缓存 {len(out[code])} 根 "
+                  f"起点 {cached[0][0]}", flush=True)
             continue
         t = time.time()
         try:

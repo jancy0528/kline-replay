@@ -11,6 +11,19 @@
     XG:三倍量 AND 底部 AND 阳线;
   日线字段（腾讯 fqkline）：[date, open, close, high, low, volume]
 
+  ★ 2026-11-15 用途修正（用户原话）：这个公式不是用来挑「最近几天符合」
+    的票，而是「用来选出来以前符合这个要求的股票的（比如从现在往前推
+    250 天内）」，因为训练要的是「这种类型的股票的完整周期」——信号出现
+    之后要有一整段拉升/见顶/回落可走。最近几个交易日的信号后面没行情，
+    达不到训练效果。因此：
+      · HISTORY_SCAN_DAYS = 250  回看过去 250 个交易日里出现过的信号；
+      · MIN_TRAILING_DAYS = 150 信号后还需留 150 个交易日，才算「可训练
+        信号」，能走完一整局完整周期；
+      · 实训池从「有可训练历史信号」的标的里挑，并按信号日/板块分散，
+        不再按「信号新近」排序（旧逻辑正好挑中最近几天，是错的）。
+    受分钟线终点 2026-11-13 约束，真正可训练的信号日大约落在
+    2025-11 ~ 2026-04；此后到今天这一段信号会被自动排除。
+
 已停用但完整保留：`legacy`（三层规则，原文见对话 2026-11-13）
 一、基础池过滤（最先执行）
   1 剔除 ST / *ST / 退市风险警示
@@ -63,13 +76,19 @@ VOLUME_MULTIPLE = 3.0        # 三倍量：V >= REF(V,1) * 3
 BOTTOM_LOOKBACK = 60         # LLV(L,60)：含当日的 60 根日线最低价
 BOTTOM_BUFFER = 0.15         # 底部区间：C <= LLV(L,60) * (1 + 0.15)
 
+# ---- 历史回看参数（2026-11-15 用户修正用途）-------------------------------
+# 公式用来「从历史里捞出曾出现过该形态的票」，而不是挑最近几天刚出信号的票。
+HISTORY_SCAN_DAYS = 250      # 回看过去 250 个交易日里出现过的信号
+MIN_TRAILING_DAYS = 150      # 信号日后还需留 150 个交易日，才能走完一整局完整周期
+# 于是实际可训练信号日区间 = [len-250, len-151]，即距今约 150~250 个交易日。
+
 # ---- 旧模式参数（legacy 专用，保留以便随时切回）---------------------------
 MIN_FLOAT_MV_YI = 50.0          # 流通市值下限（亿元）
 MIN_AVG_AMOUNT_YI = 1.0         # 近 10 日日均成交额下限（亿元）
 VOLUME_RATIO_MIN = 2.5          # 放量倍数下限
 MAX_LOT_COST = 60_000.0         # 一手成本上限（元）
-DAILY_BARS = 320                # 取多少根前复权日线（够算 20 周均线）
-SIGNAL_SCAN_DAYS = 25           # 在最近多少个交易日里回扫信号日
+DAILY_BARS = 500                # 取多少根前复权日线（够 250 天回看 + 60 天 LLV）
+SIGNAL_SCAN_DAYS = 25           # legacy 专用：在最近多少个交易日里回扫信号日
 QT_BATCH = 60                   # 腾讯批量截面每次查多少只
 HTTP_WORKERS = 12               # 并发路数
 DAILY_WORKERS = 12
@@ -378,17 +397,27 @@ def evaluate(args: tuple[str, dict, str]) -> dict | None:
         daily = fetch_daily(code)
     except Exception as e:  # noqa: BLE001
         return {'code': code, 'error': str(e)[:80]}
-    need = 110 if mode == 'legacy' else BOTTOM_LOOKBACK + SIGNAL_SCAN_DAYS
+    if mode == 'legacy':
+        need = 110
+        scan_days = SIGNAL_SCAN_DAYS
+    else:
+        # 250 天回看 + 60 天 LLV 前置 + 150 天后续周期，需要足够长的日线
+        need = HISTORY_SCAN_DAYS + BOTTOM_LOOKBACK
+        scan_days = HISTORY_SCAN_DAYS
     if len(daily) < need:
         return None
     # 用「最后一根真实成交额 / 相对成交额」把比值口径换算成亿元（旧模式用）
     rel_last = daily_amount(daily, -1) if len(daily) else 0
     scale = (q['amountWan'] / 1e4) / rel_last if rel_last > 0 else 0
     signals = []
-    lo = max(BOTTOM_LOOKBACK - 1, len(daily) - SIGNAL_SCAN_DAYS)
-    for i in range(lo, len(daily)):
+    lo = max(BOTTOM_LOOKBACK - 1, len(daily) - scan_days)
+    # bottom3x：信号日后必须还有 >= 150 个交易日，否则后面走不完完整周期，
+    # 这正是用户说的「最近几个交易日符合的股票达不到训练效果」。
+    hi = len(daily) - MIN_TRAILING_DAYS if mode != 'legacy' else len(daily)
+    for i in range(lo, hi):
         s = signal_at(code, daily, i, scale, mode)
         if s:
+            s['trailingDays'] = len(daily) - 1 - i
             signals.append(s)
     if not signals:
         return None
@@ -407,26 +436,30 @@ def evaluate(args: tuple[str, dict, str]) -> dict | None:
 
 
 def pick_pool(symbols: list[dict], n: int) -> list[str]:
-    """从命中里挑实训标的：排除 ST/退市 + 按代码板块轮转 + 同板块按信号新近/量比排序。
+    """从命中里挑实训标的（2026-11-15 修正）：按「信号日月份」分散轮转。
 
-    selection.json 保留全部命中（忠实原公式），这里只决定「哪些标的进训练包」，
-    因此排除 ST 属于训练可用性取舍，不是选股条件。
+    旧逻辑按信号新近排序，正好把最近几天刚出信号的票选进来，达不到
+    「训练完整周期」的目的。现在改为：
+      1 排除 ST/退市（训练可用性取舍，不是选股条件，selection.json 仍保留全量）
+      2 每只票取「最早一个信号日」作为代表日，按所在月份分桶
+      3 桶间轮转，让 18 只票的信号日尽量铺开在整段历史区间，避免全挤在同一波行情
+      4 桶内按三倍量倍数降序，优先选形态更典型的
     """
     cand = [p for p in symbols
             if 'ST' not in p['name'].upper() and '退' not in p['name']]
-    groups: dict[str, list[dict]] = {}
+    months: dict[str, list[dict]] = {}
     for p in cand:
-        groups.setdefault(p['code'].split('.')[1][:3], []).append(p)
-    for v in groups.values():
-        v.sort(key=lambda x: (x['signals'][-1]['date'],
-                              x['signals'][-1]['volumeRatio']), reverse=True)
+        rep = min(s['date'] for s in p['signals'])
+        months.setdefault(rep[:7], []).append(p)
+    for v in months.values():
+        v.sort(key=lambda x: max(s['volumeRatio'] for s in x['signals']), reverse=True)
     out: list[str] = []
-    keys = sorted(groups)
+    keys = sorted(months)
     while len(out) < n:
         added = False
         for k in keys:
-            while groups[k]:
-                p = groups[k].pop(0)
+            while months[k]:
+                p = months[k].pop(0)
                 if p['code'] not in out:
                     out.append(p['code'])
                     added = True
@@ -451,10 +484,12 @@ def write_public_summary(out: dict) -> None:
         'scanned': out['scanned'],
         'symbols': len(out['symbols']),
         'signalDays': out['signalDays'],
+        'trainableSignalRange': out.get('trainableSignalRange'),
         'hits': [
             {'code': p['code'], 'name': p['name'], 'floatMvYi': p['floatMvYi'],
              'signals': [{'date': s['date'], 'volumeRatio': s['volumeRatio'],
-                          'llv60': s.get('llv60'), 'close': s.get('close')}
+                          'llv60': s.get('llv60'), 'close': s.get('close'),
+                          'trailingDays': s.get('trailingDays')}
                          for s in p['signals']]}
             for p in out['symbols']
         ],
@@ -506,12 +541,21 @@ def main() -> None:
             if n % 300 == 0:
                 print(f'[scan] {n}/{len(candidates)}，命中 {len(picked)}，错误 {errors}', flush=True)
 
-    # 按最近一次信号日、信号强度排序，越靠前越典型
-    picked.sort(key=lambda x: (x['signals'][-1]['date'], x['signals'][-1]['volumeRatio']), reverse=True)
+    if mode == 'bottom3x':
+        # 按最早信号日升序、信号强度降序，输出顺序即历史时间顺序
+        picked.sort(key=lambda x: (min(s['date'] for s in x['signals']),
+                                   -max(s['volumeRatio'] for s in x['signals'])))
+    else:
+        picked.sort(key=lambda x: (x['signals'][-1]['date'], x['signals'][-1]['volumeRatio']),
+                    reverse=True)
+    all_sig_dates = sorted(s['date'] for p in picked for s in p['signals'])
+    signal_range = [all_sig_dates[0], all_sig_dates[-1]] if all_sig_dates else None
     if mode == 'bottom3x':
         rules = {
             'formula': '三倍量:=V>=REF(V,1)*3; 底部:=C<=LLV(L,60)*1.15; '
                        '阳线:=C>O; XG:三倍量 AND 底部 AND 阳线;',
+            'usage': '历史形态回捞：从过去 250 个交易日里选出曾出现过该形态的股票，'
+                     '训练其信号出现后的完整周期（不是挑最近几天刚出信号的票）',
             'volumeMultiple': VOLUME_MULTIPLE,
             'bottomLookback': BOTTOM_LOOKBACK,
             'bottomBuffer': BOTTOM_BUFFER,
@@ -519,12 +563,16 @@ def main() -> None:
             'volumeBasis': 'VOLUME（成交量，非成交额）',
             'upperShadowFilter': False,
             'basicPoolFilter': False,
-            'signalScanDays': SIGNAL_SCAN_DAYS,
+            'historyScanDays': HISTORY_SCAN_DAYS,
+            'minTrailingDays': MIN_TRAILING_DAYS,
+            'signalScanDays': HISTORY_SCAN_DAYS,
         }
         note = ('按截屏原公式逐行实现：LLV(L,60) 含当日；原文注释「过滤长上影诱多」'
                 '在代码里只有 C>O、并未实现影线过滤，故不额外加条件；'
                 '旧三层规则（ST/连板/市值/一手成本/科创板/近10日均额/周线MA）本模式全部不生效。'
-                '信号日限制在分时数据可覆盖的近 25 个交易日内。')
+                '2026-11-15 用途修正：回看过去 250 个交易日的历史信号，且只保留信号日后'
+                '仍有 >= 150 个交易日的信号，保证训练局能走完一整轮完整周期；'
+                '因此最近约 150 个交易日内刚出信号的股票不会进入本清单。')
     else:
         rules = {
             'minFloatMvYi': MIN_FLOAT_MV_YI,
@@ -540,6 +588,7 @@ def main() -> None:
         'mode': mode,
         'rules': rules,
         'note': note,
+        'trainableSignalRange': signal_range,
         'scanned': len(candidates),
         'errors': errors,
         'symbols': picked,

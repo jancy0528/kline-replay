@@ -586,10 +586,18 @@ function moreOps(intraday: boolean): string {
     <div class="btn-row"><button class="btn ghost" data-action="clearDraw">清除画线</button></div>`
   const mode = manifest?.selectionMode === 'legacy' ? '旧三层规则（legacy）' : '底部三倍量'
   const formula = manifest?.selectionFormula ?? ''
+  const usage = manifest?.selectionUsage ?? ''
+  const pol = manifest?.signalPolicy
+  const policyLine = pol
+    ? `历史回看 <b>${pol.historyScanDays}</b> 个交易日 · 信号日距今天至少 <b>${pol.minTrailingDays}</b> 个交易日<br>`
+      + `每局把信号锚定在第 <b>${pol.signalPos[0]}~${pol.signalPos[1]}</b> 天，后面留 ≥${pol.minPostSignalDays} 天走完完整周期`
+      + (pol.trainableSignalRange
+        ? `<br>可用信号日区间：${pol.trainableSignalRange[0]} ~ ${pol.trainableSignalRange[1]}` : '')
+    : ''
   return `<details class="more-ops">
     <summary>更多操作 <span>全仓 / 清仓 / 自动播放 / 画线 / 复盘</span> ▾</summary>
     <div class="more-ops-body">
-      <div class="mode-note">当前选股模式：<b>${mode}</b>${formula ? `<br>${formula}` : ''}</div>
+      <div class="mode-note">当前选股模式：<b>${mode}</b>${formula ? `<br>${formula}` : ''}${usage ? `<br><span class="mode-usage">${usage}</span>` : ''}${policyLine ? `<br><span class="mode-policy">${policyLine}</span>` : ''}</div>
       <div class="btn-row">
         <button class="btn" data-action="buyAll">全仓买</button>
         <button class="btn" data-action="sellAll">清仓</button>

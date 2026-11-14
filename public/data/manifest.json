@@ -1,24 +1,38 @@
 {
-  "version": 8,
-  "generatedAt": "2026-11-14T15:52:42+00:00",
-  "source": "baostock 前复权日线（2015 起完整历史） + baostock 一年期 5 分钟线 + 腾讯股本快照",
+  "version": 9,
+  "generatedAt": "2026-11-14T17:08:43+00:00",
+  "source": "baostock 前复权日线（2015 起完整历史） + baostock 5 分钟线（2025-08 起） + 腾讯股本快照",
   "adjust": "前复权，逐日按收盘价对齐",
   "selectionMode": "bottom3x",
   "selectionFormula": "三倍量:=V>=REF(V,1)*3; 底部:=C<=LLV(L,60)*1.15; 阳线:=C>O; XG:三倍量 AND 底部 AND 阳线;",
-  "dataFile": "sessions-a3199e9fc9.json",
-  "bytes": 9369832,
+  "selectionUsage": "历史形态回捞：从过去 250 个交易日里选出曾出现过该形态的股票，训练其信号出现后的完整周期（不是挑最近几天刚出信号的票）",
+  "signalPolicy": {
+    "historyScanDays": 250,
+    "minTrailingDays": 150,
+    "signalPos": [
+      21,
+      50
+    ],
+    "minPostSignalDays": 100,
+    "trainableSignalRange": [
+      "2025-08-28",
+      "2026-04-02"
+    ]
+  },
+  "dataFile": "sessions-4d1da75b71.json",
+  "bytes": 11043092,
   "symbols": 18,
   "games": 288,
   "gameDays": 150,
-  "minuteBars": 152045,
-  "historyBars": 31117,
+  "minuteBars": 174859,
+  "historyBars": 39971,
   "selection": {
-    "symbols": 290,
-    "signals": 297,
+    "symbols": 1572,
+    "signals": 2044,
     "scanned": 4599,
     "gamesWithSignal": 288,
-    "screenSignals": 121,
-    "historySignals": 167
+    "screenSignals": 221,
+    "historySignals": 67
   },
   "windows": [
     {

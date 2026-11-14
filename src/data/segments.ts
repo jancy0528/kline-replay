@@ -38,12 +38,15 @@ export interface SymbolData {
   fundamentals?: Fundamentals
 }
 
-/** 一局 = 某只标的 + 5 分钟序列上的起止游标；signal 是这局要覆盖的信号日。 */
+/** 一局 = 某只标的 + 5 分钟序列上的起止游标；signal 是这局要覆盖的信号日。
+ *  signalPos 是信号日在 150 天窗口里的第几天，仅用于复盘/查验。 */
 export interface Game {
   c: string
   s: number
   e: number
   signal?: string
+  signalKind?: 'screen' | 'history'
+  signalPos?: number
 }
 
 export interface SessionPackage {
@@ -67,6 +70,16 @@ export interface DataManifest {
   /** 当前生效的选股模式与公式，只用于「更多操作」里查验，不参与训练逻辑 */
   selectionMode?: string
   selectionFormula?: string
+  /** 选股用途说明（历史形态回捞 / 完整周期训练），只用于展示 */
+  selectionUsage?: string
+  /** 对局窗口的信号锚定策略，只用于展示 */
+  signalPolicy?: {
+    historyScanDays: number
+    minTrailingDays: number
+    signalPos: [number, number]
+    minPostSignalDays: number
+    trainableSignalRange?: [string, string] | null
+  }
   /** 选股命中数与信号日数，只用于展示 */
   selection?: { symbols: number; signals: number; scanned: number }
   windows: WindowMeta[]

@@ -11,12 +11,16 @@
      比例校准，保证各窗口报价一致；这是口径对齐，不是合成行情。
   4. **一局 150 个完整交易日**：训练按「日」决策，每次推进给完整一天，
      分时整屏换一天、日K 多一根。150 天每天都要有真实分时，因此分钟线
-     用 BaoStock 的一年期窗口（新浪只给近 21 个交易日，不够用）。
-  5. **训练局由选股信号驱动**：`select_stocks.py` 按当前生效的选股模式
-     （默认「底部三倍量」：V>=REF(V,1)*3 且 C<=LLV(L,60)*1.15 且 C>O；
-     旧三层规则代码保留但停用）挑出标的与信号日；长窗口下再用**同一套
-     公式**在日线历史里补一批信号日，让 150 天里的形态不都挤在末尾。
-     每局保证窗口内含一个信号日。
+     用 BaoStock 的长窗口（新浪只给近 21 个交易日，不够用）。2026-11-15
+     起因选股改为回看历史信号，分钟线起点前移到 2025-08，覆盖约 310 个
+     交易日，才能容纳 2025 年下半年的历史信号及其后续完整周期。
+  5. **训练局由「历史信号」驱动，信号落在窗口前段**（2026-11-15 用户修正）：
+     `select_stocks.py` 按当前生效的选股模式（默认「底部三倍量」：
+     V>=REF(V,1)*3 且 C<=LLV(L,60)*1.15 且 C>O；旧三层规则代码保留但停用）
+     回看过去 250 个交易日，捞出**曾经出现过该形态**的标的与历史信号日，
+     且只保留信号日后仍有 >=150 个交易日的信号。训练要练的是「信号出现
+     之后一整轮完整周期」，不是最近几天刚出信号的票。每局把信号日锚定
+     在窗口第 20~50 天，后面留 100~130 个交易日走完启动→拉升→见顶→回落。
   6. 日线带完整历史（2015 年起），供缩小左拉判断当前价的历史位置；
      分钟线裁剪到对局实际用到的区间，控制数据包体积。
 
@@ -67,9 +71,15 @@ WINDOWS = [
 GAME_DAYS = WINDOWS[0]["advance"]   # 一局 150 个完整交易日
 MIN_GAME_DAYS = GAME_DAYS           # 跨度不足 150 天的局一律不生成
 MIN_MINUTE_BARS = 300
-# 期望信号日落在窗口的第 60~120 天，让信号前有历史、信号后有交易时间；
-# 受分钟数据窗口边界约束时自动夹到合法范围内。
-SIGNAL_POS = (60, 120)
+# 2026-11-15 修正：信号日锚定在窗口第 21~50 天（0-based 索引 20~49；
+# 前面留一小段看底部形态，后面留 100~129 个交易日走完整周期）。
+# 严禁把信号挤到窗口末尾——那样一开局形态就结束了，看不到后续演绎，
+# 正是用户指出的问题。对外展示统一用 1-based「第几天」。
+SIGNAL_POS = (20, 49)
+# 信号日之后至少还要留多少个交易日（窗口内），保证完整周期可走完。
+MIN_POST_SIGNAL_DAYS = 100
+# 与 select_stocks.py 的历史回看口径对齐（legacy 模式没有该字段时的兜底）
+HISTORY_SCAN_DAYS = 250
 
 
 def load_daily() -> dict[str, list[list]]:
@@ -202,14 +212,22 @@ def technical_signals(daily: list[list], since: str, mode: str = 'bottom3x') -> 
 def make_games(symbols: dict, signals: dict[str, list[str]],
                extra: dict[str, set[str]], per_symbol: int,
                rng: random.Random) -> tuple[list[dict], dict[str, int]]:
-    """每局 150 个完整交易日，且窗口内含一个满足核心条件的信号日。
+    """每局 150 个完整交易日，信号日锚定在窗口第 20~49 天。
 
-    s 是起始日的第一根 5 分钟 K，e 是第 150 天 15:00 的最后一根；
-    引擎开局把起始日走完停在收盘，之后每次推进恰好落到下一个日末。
-    起点尽量让信号日落在窗口中段，受分钟数据边界约束时自动夹到合法范围。
+    2026-11-15 修正：训练目的是「信号出现后走完一整轮完整周期」，
+    因此信号必须在窗口前段、后面留 >=100 个交易日。旧实现把起点
+    start_idx 夹在 [0, max_start]，当信号靠近数据末端时信号会被推到
+    窗口最后几天甚至窗口外，形态一开局就结束了——这正是要修的问题。
+    现在反过来：先按信号反推起点，只允许信号真正落在前段的锚点；
+    放不进去的信号直接弃用，不生成「无信号」或「信号在末尾」的局。
+
+    s 是起始日的第一根 5 分钟 K，e 是第 150 天 15:00 的最后一根。
     """
     games: list[dict] = []
     kinds = {"screen": 0, "history": 0}
+    pos_lo, pos_hi = SIGNAL_POS
+    # 信号后要留够完整周期，所以信号位置还有个上限
+    pos_hi = min(pos_hi, GAME_DAYS - 1 - MIN_POST_SIGNAL_DAYS)
     for code, data in symbols.items():
         m5 = data["m5"]
         n = len(m5)
@@ -220,39 +238,53 @@ def make_games(symbols: dict, signals: dict[str, list[str]],
         for i, d in enumerate(dates):
             day_first.setdefault(d, i)
             day_last[d] = i
+        day_pos = {d: i for i, d in enumerate(days)}
         max_start = len(days) - GAME_DAYS
         if max_start < 0:
             print(f"  - {code} 只有 {len(days)} 个交易日，不足 {GAME_DAYS} 天，跳过")
             continue
-        # 窗口前 20 天的信号不做锚点：那种局一开局信号就已经走完，
-        # 看不到形态形成过程。其余信号尽量放在窗口中段。
-        pool: list[tuple[str, str]] = []
+        # 收集「可锚定」信号：存在一个位置 pos∈[pos_lo,pos_hi] 使得
+        # start_idx = sig_idx - pos 落在 [0, max_start] 内。
+        # 注意：靠近数据末尾的信号 sig_idx 很大，wlo = sig_idx - max_start
+        # 会超过 pos_hi，被自动排除——这正是「不要最近几天刚出信号的票」。
+        # primary = 选股命中的历史信号日（用户要的「选出来的票」），
+        # 权重 3；fallback = 同一公式补的历史形态日，权重 1，用来让一只票
+        # 的 16 局覆盖不止一个形态日。两者都必须是「历史」信号。
+        primary: list[tuple[str, str, int, int]] = []
+        fallback: list[tuple[str, str, int, int]] = []
         for kind, candidates in (('screen', signals.get(code, [])),
                                  ('history', sorted(extra.get(code, set())))):
             for d in candidates:
-                if d in day_first and days.index(d) >= 20:
-                    pool.append((kind, d))
+                if d not in day_first:
+                    continue
+                sig_idx = day_pos[d]
+                wlo = max(pos_lo, sig_idx - max_start)
+                whi = min(pos_hi, sig_idx)
+                if wlo <= whi:
+                    target = primary if kind == 'screen' else fallback
+                    target.append((kind, d, wlo, whi))
+        pool = primary * 3 + fallback
+        if not pool:
+            print(f"  - {code} 没有可锚定到窗口前段的历史信号，跳过（不生成无意义局）")
+            continue
+        if not primary:
+            print(f"  ! {code} 选股信号无法锚定，改用同公式历史形态日兜底")
         for _ in range(per_symbol):
-            if pool:
-                kind, signal = rng.choice(pool)
-                sig_idx = days.index(signal)
-                want = rng.randint(*SIGNAL_POS)
-                start_idx = max(0, min(sig_idx - want, max_start))
-            else:
-                kind, signal = '', None
-                start_idx = rng.randint(0, max_start)
+            kind, signal, wlo, whi = rng.choice(pool)
+            want = rng.randint(wlo, whi)
+            sig_idx = day_pos[signal]
+            start_idx = sig_idx - want
             end_idx = start_idx + GAME_DAYS - 1
+            if start_idx < 0 or end_idx > len(days) - 1:
+                continue
             s = day_first[days[start_idx]]
             e = day_last[days[end_idx]]
-            # e 落在最后一根 5 分钟 K 是合法的：引擎按 dayEnds 判定结束，
-            # 不需要 e 之后还有数据。只需排除 s/e 越界或退化的局。
             if e <= s or e >= n or s < 0:
                 continue
-            game: dict = {"c": code, "s": s, "e": e}
-            if signal and start_idx <= sig_idx <= end_idx:
-                game["signal"] = signal
-                game["signalKind"] = kind
-                kinds[kind] += 1
+            game: dict = {"c": code, "s": s, "e": e,
+                          "signal": signal, "signalKind": kind,
+                          "signalPos": want + 1}
+            kinds[kind] += 1
             games.append(game)
     rng.shuffle(games)
     return games, kinds
@@ -295,11 +327,17 @@ def main() -> int:
         p["code"]: [s["date"] for s in p["signals"]]
         for p in selection.get("symbols", [])
     }
-    # 长窗口下用「当前生效的同一套公式」补历史信号日，避免形态全挤在末尾
+    # 长窗口下用「当前生效的同一套公式」补历史信号日，让一只票能练到
+    # 不止一个形态日。补充信号同样限制在选股口径的历史区间内（信号后
+    # 仍需留够完整周期），避免把最近几天刚出信号的日子又带回来。
     first_minute_day = min((str(b[0])[:10] for v in minutes.values() for b in v),
                            default="2026-01-01")
-    extra = {c: technical_signals(bars, first_minute_day, mode)
-             for c, bars in daily.items() if c in minutes}
+    sig_range = selection.get("trainableSignalRange") or [first_minute_day, "9999-12-31"]
+    extra = {
+        c: {d for d in technical_signals(bars, first_minute_day, mode)
+            if sig_range[0] <= d <= sig_range[1]}
+        for c, bars in daily.items() if c in minutes
+    }
     print(f"[mode] {mode}（旧三层规则代码保留但停用）")
     print(f"[source] 日线 {len(daily)} 只 / {sum(len(v) for v in daily.values())} 根")
     print(f"[source] 5 分钟线 {minute_file.name} · {len(minutes)} 只 / "
@@ -334,7 +372,7 @@ def main() -> int:
     history_bars = sum(len(v["day"]) for v in symbols.values())
     print(f"[trim] 分钟线保留 {kept_minutes} 根 / {len(symbols)} 只")
     body = {
-        "version": 8,
+        "version": 9,
         "windows": WINDOWS,
         "gameDays": GAME_DAYS,
         "symbols": symbols,
@@ -345,15 +383,26 @@ def main() -> int:
     filename = f"sessions-{digest}.json"
     (OUT_DIR / filename).write_bytes(raw)
 
+    rules = selection.get("rules", {})
     manifest = {
-        "version": 8,
+        "version": 9,
         "generatedAt": datetime.now(timezone.utc).isoformat(timespec="seconds"),
-        "source": "baostock 前复权日线（2015 起完整历史） + baostock 一年期 5 分钟线 + 腾讯股本快照",
+        "source": "baostock 前复权日线（2015 起完整历史） + baostock 5 分钟线（2025-08 起） + 腾讯股本快照",
         "adjust": "前复权，逐日按收盘价对齐",
         "selectionMode": mode,
-        "selectionFormula": selection.get("rules", {}).get(
+        "selectionFormula": rules.get(
             "formula",
             "legacy: 放量≥2.5 + 周线 MA5>MA10>MA20"),
+        "selectionUsage": rules.get(
+            "usage",
+            "legacy: 三层规则选股"),
+        "signalPolicy": {
+            "historyScanDays": rules.get("historyScanDays", HISTORY_SCAN_DAYS),
+            "minTrailingDays": rules.get("minTrailingDays", 0),
+            "signalPos": [SIGNAL_POS[0] + 1, SIGNAL_POS[1] + 1],
+            "minPostSignalDays": MIN_POST_SIGNAL_DAYS,
+            "trainableSignalRange": selection.get("trainableSignalRange"),
+        },
         "dataFile": filename,
         "bytes": len(raw),
         "symbols": len(symbols),
