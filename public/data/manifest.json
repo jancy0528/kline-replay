@@ -1,11 +1,40 @@
 {
-  "version": 9,
-  "generatedAt": "2026-11-14T17:08:43+00:00",
+  "version": 10,
+  "generatedAt": "2026-11-14T18:02:56+00:00",
   "source": "baostock 前复权日线（2015 起完整历史） + baostock 5 分钟线（2025-08 起） + 腾讯股本快照",
   "adjust": "前复权，逐日按收盘价对齐",
   "selectionMode": "bottom3x",
   "selectionFormula": "三倍量:=V>=REF(V,1)*3; 底部:=C<=LLV(L,60)*1.15; 阳线:=C>O; XG:三倍量 AND 底部 AND 阳线;",
   "selectionUsage": "历史形态回捞：从过去 250 个交易日里选出曾出现过该形态的股票，训练其信号出现后的完整周期（不是挑最近几天刚出信号的票）",
+  "selectionFilters": {
+    "enabled": true,
+    "description": "结果过滤层（不改公式 XG）：删除 ST/退市、流通市值<20亿、流通市值>100亿，以及三倍量当日成交额<=4.5亿的信号日",
+    "excludeST": true,
+    "minFloatMvYi": 20.0,
+    "maxFloatMvYi": 100.0,
+    "minSignalAmountYi": 4.5,
+    "boundary": "成交额 <= 4.5 亿删除、> 4.5 亿保留；市值 20~100 亿含边界",
+    "amountBasis": "优先用 BaoStock 日线真实成交额（亿元）；缺精确值时用 腾讯前复权收盘价 × 成交量(手) × 100 / 1e8 估算（保守下界）",
+    "floatMvBasis": "腾讯最新截面快照流通市值（2026-11-11），非信号日当天市值",
+    "stats": {
+      "stRemoved": 90,
+      "floatMvBelow20Removed": 134,
+      "floatMvAbove100Removed": 333,
+      "symbolRemovedByAmount": 745,
+      "signalRemovedByAmount": 1010,
+      "preciseAmountSignals": 456,
+      "sourceSymbols": 1572,
+      "sourceSignals": 2044,
+      "totalDroppedSignals": 1732,
+      "totalDroppedSymbols": 1302
+    },
+    "keptSymbols": 270,
+    "keptSignals": 312
+  },
+  "sourceHits": {
+    "symbols": 1572,
+    "signals": 2044
+  },
   "signalPolicy": {
     "historyScanDays": 250,
     "minTrailingDays": 150,
@@ -15,24 +44,24 @@
     ],
     "minPostSignalDays": 100,
     "trainableSignalRange": [
-      "2025-08-28",
+      "2025-10-30",
       "2026-04-02"
     ]
   },
-  "dataFile": "sessions-4d1da75b71.json",
-  "bytes": 11043092,
+  "dataFile": "sessions-36a95e6415.json",
+  "bytes": 10058909,
   "symbols": 18,
   "games": 288,
   "gameDays": 150,
-  "minuteBars": 174859,
-  "historyBars": 39971,
+  "minuteBars": 153936,
+  "historyBars": 45082,
   "selection": {
-    "symbols": 1572,
-    "signals": 2044,
+    "symbols": 270,
+    "signals": 312,
     "scanned": 4599,
     "gamesWithSignal": 288,
-    "screenSignals": 221,
-    "historySignals": 67
+    "screenSignals": 230,
+    "historySignals": 58
   },
   "windows": [
     {

@@ -24,6 +24,22 @@
     受分钟线终点 2026-11-13 约束，真正可训练的信号日大约落在
     2025-11 ~ 2026-04；此后到今天这一段信号会被自动排除。
 
+  ★ 2026-11-15 追加：结果过滤层（用户原话「筛选出来的股票，删除掉…」）
+    这不是选股公式，是对**公式命中清单**做删除，公式 XG 保持原样：
+      1 删除 ST / *ST / 退市风险警示标的
+      2 删除流通市值 < 20 亿的
+      3 删除流通市值 > 100 亿的
+      4 删除「3 倍量当日成交额 <= 4.5 亿」的信号日；
+        一只票若一个信号日都不剩，整只删除
+    「4.5 亿」按**成交额**解释：腾讯 fqkline 的 V 单位是手，
+    若按「成交量 4.5 亿股/手」解释全市场 0 只达标、票会被删光，
+    按成交额则 641 个信号 / 269 只票达标，符合用户设规模门槛的意图。
+    成交额用「成交量(手) × 100 × 前复权收盘价」估算；前复权价 ≤ 当日
+    真实价，所以这是保守下界：估算 > 4.5 亿 ⇒ 真实成交额几乎必然达标。
+    未过滤的原始命中另存 selection_raw.json（本地、不进仓库），
+    `python tools/select_stocks.py --refine-only --write-picked 18`
+    可在不重扫全市场的情况下反复调整这四条门槛。
+
 已停用但完整保留：`legacy`（三层规则，原文见对话 2026-11-13）
 一、基础池过滤（最先执行）
   1 剔除 ST / *ST / 退市风险警示
@@ -82,6 +98,13 @@ HISTORY_SCAN_DAYS = 250      # 回看过去 250 个交易日里出现过的信�
 MIN_TRAILING_DAYS = 150      # 信号日后还需留 150 个交易日，才能走完一整局完整周期
 # 于是实际可训练信号日区间 = [len-250, len-151]，即距今约 150~250 个交易日。
 
+# ---- 结果过滤层（2026-11-15 用户指定；只作用于 bottom3x 的命中结果）------
+# 注意：这一层是「对结果做删除」，不是选股公式，公式 XG 保持原样。
+FILTER_ST = True                # 删除 ST / *ST / 退市风险警示
+POOL_MIN_FLOAT_MV_YI = 20.0     # 删除流通市值 < 20 亿
+POOL_MAX_FLOAT_MV_YI = 100.0    # 删除流通市值 > 100 亿
+MIN_SIGNAL_AMOUNT_YI = 4.5      # 删除三倍量当日成交额 <= 4.5 亿的信号日
+
 # ---- 旧模式参数（legacy 专用，保留以便随时切回）---------------------------
 MIN_FLOAT_MV_YI = 50.0          # 流通市值下限（亿元）
 MIN_AVG_AMOUNT_YI = 1.0         # 近 10 日日均成交额下限（亿元）
@@ -98,6 +121,7 @@ RAW = ROOT / 'src' / 'data' / 'raw'
 UNIVERSE = RAW / 'universe.json'
 SNAPSHOT = RAW / 'snapshot.json'
 SELECTION = RAW / 'selection.json'
+SELECTION_RAW = RAW / 'selection_raw.json'   # 未经过滤的原始命中，供 --refine-only 复用
 MINUTE_CACHE = RAW / 'minutes.json'
 
 HEADERS = {
@@ -380,6 +404,9 @@ def signal_at_bottom3x(code: str, daily: list[list], i: int, scale: float) -> di
         'bottomCeil': round(lo * (1 + BOTTOM_BUFFER), 3),
         'close': c,
         'open': o,
+        # 信号日成交额估算（亿元）：腾讯 V 的单位是「手」，×100 换成股。
+        # 前复权收盘价 ≤ 当日真实价，故此值是保守下界。
+        'amountYiEst': round(v * c * 100 / 1e8, 4),
         'changePct': round((c / prev[2] - 1) * 100, 2) if prev[2] > 0 else 0,
     }
 
@@ -435,6 +462,145 @@ def evaluate(args: tuple[str, dict, str]) -> dict | None:
     return out
 
 
+_PRECISE_AMOUNTS: dict | None = None
+
+
+def precise_amounts() -> dict:
+    """BaoStock 日线真实成交额缓存：{code: {date: 亿元}}。
+
+    由拉取脚本写入 src/data/raw/signal_amounts.json（本地、不进仓库）。
+    两套数据源的前复权基准不同，腾讯估算与真实成交额有约 1% 偏差，
+    边界票可能翻转；有精确值时以精确值为准。
+    """
+    global _PRECISE_AMOUNTS
+    if _PRECISE_AMOUNTS is None:
+        path = RAW / 'signal_amounts.json'
+        _PRECISE_AMOUNTS = (json.loads(path.read_text(encoding='utf-8'))
+                            if path.exists() else {})
+    return _PRECISE_AMOUNTS
+
+
+def estimated_amount_yi(s: dict) -> float:
+    """信号日成交额估算（亿元）：成交量(手) × 100 × 前复权收盘价。
+
+    腾讯 fqkline 的 volume 单位是手；前复权价 ≤ 当日真实价，因此这是
+    保守下界——估算 > 4.5 亿时真实成交额几乎必然也 > 4.5 亿。旧数据
+    （还没有 amountYiEst 字段）也能用 volume/close 即时算出。
+    """
+    est = s.get('amountYiEst')
+    if est:
+        return float(est)
+    return s['volume'] * s['close'] * 100 / 1e8
+
+
+def signal_amount_yi(s: dict, code: str | None = None) -> float:
+    """过滤判定采用的成交额：BaoStock 真实值优先，腾讯估算兜底。"""
+    if code:
+        exact = precise_amounts().get(code, {}).get(s['date'])
+        if exact and exact > 0:
+            return float(exact)
+    return estimated_amount_yi(s)
+
+
+def apply_result_filters(out: dict, mode: str) -> tuple[dict, dict]:
+    """对公式命中清单做四条删除（2026-11-15 用户指定）。
+
+    ★ 这一层不是选股公式，公式 XG 保持原样，只删结果：
+      1 删除 ST / *ST / 退市风险警示标的（整只）
+      2 删除流通市值 < 20 亿（整只）
+      3 删除流通市值 > 100 亿（整只）
+      4 删除「三倍量当日成交额 <= 4.5 亿」的信号日；
+        一只票若一个信号日都不剩，整只删除
+    市值取腾讯最新截面快照 floatMvYi（2026-11-11），不是信号日当天市值。
+    legacy 模式不做这层过滤，保持旧行为。
+    """
+    if mode != 'bottom3x':
+        return out, {'enabled': False}
+    source_symbols = len(out['symbols'])
+    source_signals = sum(len(p['signals']) for p in out['symbols'])
+    stats: dict[str, int] = {
+        'stRemoved': 0,
+        'floatMvBelow20Removed': 0,
+        'floatMvAbove100Removed': 0,
+        'symbolRemovedByAmount': 0,
+        'signalRemovedByAmount': 0,
+        'preciseAmountSignals': 0,
+        'sourceSymbols': source_symbols,
+        'sourceSignals': source_signals,
+    }
+    kept: list[dict] = []
+    for p in out['symbols']:
+        name = p.get('name', '').upper()
+        if FILTER_ST and ('ST' in name or '退' in name):
+            stats['stRemoved'] += 1
+            continue
+        mv = p.get('floatMvYi', 0)
+        if mv < POOL_MIN_FLOAT_MV_YI:
+            stats['floatMvBelow20Removed'] += 1
+            continue
+        if mv > POOL_MAX_FLOAT_MV_YI:
+            stats['floatMvAbove100Removed'] += 1
+            continue
+        sigs: list[dict] = []
+        for raw_sig in p['signals']:
+            s = dict(raw_sig)
+            est = estimated_amount_yi(s)
+            amt = signal_amount_yi(s, p['code'])
+            s['amountYiEst'] = round(est, 4)       # 腾讯前复权估算
+            s['amountYi'] = round(amt, 4)          # 过滤判定实际采用值
+            s['amountSource'] = 'baostock' if amt != est else 'estimated'
+            if amt != est:
+                stats['preciseAmountSignals'] += 1
+            if amt > MIN_SIGNAL_AMOUNT_YI:      # 「不超过 4.5 亿」删除 ⇒ 只留 > 4.5 亿
+                sigs.append(s)
+            else:
+                stats['signalRemovedByAmount'] += 1
+        if not sigs:
+            stats['symbolRemovedByAmount'] += 1
+            continue
+        q = dict(p)
+        q['signals'] = sigs
+        kept.append(q)
+
+    res = dict(out)
+    res['symbols'] = kept
+    res['signalDays'] = sum(len(p['signals']) for p in kept)
+    dates = sorted(s['date'] for p in kept for s in p['signals'])
+    res['trainableSignalRange'] = [dates[0], dates[-1]] if dates else None
+    res['sourceHits'] = {'symbols': source_symbols, 'signals': source_signals}
+    stats['totalDroppedSignals'] = source_signals - res['signalDays']
+    stats['totalDroppedSymbols'] = source_symbols - len(kept)
+    filters = {
+        'enabled': True,
+        'description': '结果过滤层（不改公式 XG）：删除 ST/退市、流通市值<20亿、'
+                       '流通市值>100亿，以及三倍量当日成交额<=4.5亿的信号日',
+        'excludeST': FILTER_ST,
+        'minFloatMvYi': POOL_MIN_FLOAT_MV_YI,
+        'maxFloatMvYi': POOL_MAX_FLOAT_MV_YI,
+        'minSignalAmountYi': MIN_SIGNAL_AMOUNT_YI,
+        'boundary': '成交额 <= 4.5 亿删除、> 4.5 亿保留；市值 20~100 亿含边界',
+        'amountBasis': '优先用 BaoStock 日线真实成交额（亿元）；缺精确值时用 '
+                       '腾讯前复权收盘价 × 成交量(手) × 100 / 1e8 估算（保守下界）',
+        'floatMvBasis': '腾讯最新截面快照流通市值（2026-11-11），非信号日当天市值',
+        'stats': stats,
+        'keptSymbols': len(kept),
+        'keptSignals': res['signalDays'],
+    }
+    res['filters'] = filters
+    note = res.get('note', '')
+    res['note'] = (note + ' 2026-11-15 追加结果过滤层：删除 ST/退市、流通市值<20亿或>100亿，'
+                   '以及三倍量当日成交额<=4.5亿的信号日；公式 XG 未改。')
+    rules = dict(res.get('rules', {}))
+    rules['resultFilters'] = filters['description']
+    rules['filterMinFloatMvYi'] = POOL_MIN_FLOAT_MV_YI
+    rules['filterMaxFloatMvYi'] = POOL_MAX_FLOAT_MV_YI
+    rules['filterMinSignalAmountYi'] = MIN_SIGNAL_AMOUNT_YI
+    rules['filterExcludeST'] = FILTER_ST
+    rules['basicPoolFilter'] = False   # 前置选股仍无基础池过滤，过滤只在结果层
+    res['rules'] = rules
+    return res, filters
+
+
 def pick_pool(symbols: list[dict], n: int) -> list[str]:
     """从命中里挑实训标的（2026-11-15 修正）：按「信号日月份」分散轮转。
 
@@ -485,10 +651,15 @@ def write_public_summary(out: dict) -> None:
         'symbols': len(out['symbols']),
         'signalDays': out['signalDays'],
         'trainableSignalRange': out.get('trainableSignalRange'),
+        'sourceHits': out.get('sourceHits'),
+        'filters': out.get('filters'),
         'hits': [
             {'code': p['code'], 'name': p['name'], 'floatMvYi': p['floatMvYi'],
              'signals': [{'date': s['date'], 'volumeRatio': s['volumeRatio'],
                           'llv60': s.get('llv60'), 'close': s.get('close'),
+                          'amountYiEst': round(estimated_amount_yi(s), 4),
+                          'amountYi': round(signal_amount_yi(s, p['code']), 4),
+                          'amountSource': s.get('amountSource', 'estimated'),
                           'trailingDays': s.get('trailingDays')}
                          for s in p['signals']]}
             for p in out['symbols']
@@ -496,6 +667,35 @@ def write_public_summary(out: dict) -> None:
     }
     path.write_text(json.dumps(summary, ensure_ascii=False, indent=1), encoding='utf-8')
     print(f'[summary] 线上查验清单 → {path}', flush=True)
+
+
+def finalize(out: dict, args) -> dict:
+    """应用「结果过滤层」并落盘；全市场扫描与 --refine-only 两条路径共用。"""
+    mode = out.get('mode', MODE)
+    out, filters = apply_result_filters(out, mode)
+    SELECTION.write_text(json.dumps(out, ensure_ascii=False, indent=1), encoding='utf-8')
+    write_public_summary(out)
+    if args.write_picked:
+        codes = pick_pool(out['symbols'], args.write_picked)
+        picked_file = RAW / 'picked.json'
+        picked_file.write_text(json.dumps(codes, ensure_ascii=False), encoding='utf-8')
+        print(f'[picked] 实训标的 {len(codes)} 只 → {picked_file}', flush=True)
+    if filters.get('enabled'):
+        st = filters['stats']
+        print(f'[filter] 原始命中 {st["sourceSymbols"]} 只 / {st["sourceSignals"]} 信号日 → '
+              f'保留 {filters["keptSymbols"]} 只 / {filters["keptSignals"]} 信号日', flush=True)
+        print(f'[filter] 删除明细：ST {st["stRemoved"]} 只、市值<20亿 '
+              f'{st["floatMvBelow20Removed"]} 只、市值>100亿 '
+              f'{st["floatMvAbove100Removed"]} 只、量能不足整只删除 '
+              f'{st["symbolRemovedByAmount"]} 只 + 单独信号日 '
+              f'{st["signalRemovedByAmount"]} 个', flush=True)
+    print(f'\n[ok] {mode} 最终 {len(out["symbols"])} 只 / {out["signalDays"]} 个信号日 → '
+          f'{SELECTION}', flush=True)
+    for p in out['symbols'][:20]:
+        print(f"  {p['code']} {p['name']:<8} 市值 {p['floatMvYi']:>8.1f}亿  "
+              f"信号 {','.join(s['date'] for s in p['signals'][-3:])}  "
+              f"当日额 {round(signal_amount_yi(p['signals'][-1], p['code']), 2)}亿", flush=True)
+    return out
 
 
 def main() -> None:
@@ -508,7 +708,23 @@ def main() -> None:
                     help='从命中里挑 N 只写入 src/data/raw/picked.json')
     ap.add_argument('--mode', default=MODE, choices=VALID_MODES,
                     help='bottom3x=底部三倍量（默认生效）；legacy=旧三层规则（保留但停用）')
+    ap.add_argument('--refine-only', action='store_true',
+                    help='不重扫全市场，仅对 selection_raw.json 的原始命中重新应用结果过滤层')
     args = ap.parse_args()
+
+    if args.refine_only:
+        if not SELECTION_RAW.exists():
+            if not SELECTION.exists():
+                raise SystemExit('没有原始命中文件，请先跑一次全市场扫描')
+            # 兼容升级前的版本：当时的 selection.json 就是未经过滤的全量命中
+            SELECTION_RAW.write_text(SELECTION.read_text(encoding='utf-8'), encoding='utf-8')
+            print(f'[refine] 首次运行，把现有 {SELECTION.name} 留档为原始命中', flush=True)
+        raw_out = json.loads(SELECTION_RAW.read_text(encoding='utf-8'))
+        print(f'[refine] 跳过全市场扫描，原始命中 {len(raw_out["symbols"])} 只 / '
+              f'{raw_out["signalDays"]} 信号日', flush=True)
+        finalize(raw_out, args)
+        return
+
     mode = args.mode
     print(f'[mode] {mode}'
           + ('  <-- 旧三层规则代码保留但本轮不生效' if mode == 'bottom3x' else ''), flush=True)
@@ -594,19 +810,10 @@ def main() -> None:
         'symbols': picked,
         'signalDays': sum(len(p['signals']) for p in picked),
     }
-    SELECTION.write_text(json.dumps(out, ensure_ascii=False, indent=1), encoding='utf-8')
-    write_public_summary(out)
-    if args.write_picked:
-        codes = pick_pool(picked, args.write_picked)
-        picked_file = RAW / 'picked.json'
-        picked_file.write_text(json.dumps(codes, ensure_ascii=False), encoding='utf-8')
-        print(f'[picked] 实训标的 {len(codes)} 只 → {picked_file}', flush=True)
-    print(f'\n[ok] {mode} 命中 {len(picked)} 只 / {out["signalDays"]} 个信号日，'
-          f'耗时 {round(time.time() - t0, 1)}s → {SELECTION}', flush=True)
-    for p in picked[:20]:
-        print(f"  {p['code']} {p['name']:<8} 市值 {p['floatMvYi']:>8.1f}亿  "
-              f"信号 {','.join(s['date'] for s in p['signals'][-3:])}  "
-              f"量比 {p['signals'][-1]['volumeRatio']}x", flush=True)
+    # 未过滤的原始命中单独留档，供 --refine-only 反复调门槛，避免重扫 4600 只
+    SELECTION_RAW.write_text(json.dumps(out, ensure_ascii=False, indent=1), encoding='utf-8')
+    print(f'[scan] 全市场扫描耗时 {round(time.time() - t0, 1)}s', flush=True)
+    finalize(out, args)
 
 
 if __name__ == '__main__':

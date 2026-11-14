@@ -594,10 +594,19 @@ function moreOps(intraday: boolean): string {
       + (pol.trainableSignalRange
         ? `<br>可用信号日区间：${pol.trainableSignalRange[0]} ~ ${pol.trainableSignalRange[1]}` : '')
     : ''
+  const flt = manifest?.selectionFilters
+  const src = manifest?.sourceHits
+  const filterLine = flt?.enabled
+    ? `结果过滤（不改公式）：删除 ST / 退市、流通市值 &lt;${flt.minFloatMvYi}亿 或 &gt;${flt.maxFloatMvYi}亿，`
+      + `以及 3 倍量当日成交额 ≤${flt.minSignalAmountYi}亿的信号日`
+      + (src ? `<br>公式命中 ${src.symbols} 只 / ${src.signals} 信号日 → 保留 `
+        + `${flt.keptSymbols ?? '?'} 只 / ${flt.keptSignals ?? '?'} 信号日` : '')
+    : ''
+  const noteLine = [policyLine, filterLine].filter(Boolean).join('<br>')
   return `<details class="more-ops">
     <summary>更多操作 <span>全仓 / 清仓 / 自动播放 / 画线 / 复盘</span> ▾</summary>
     <div class="more-ops-body">
-      <div class="mode-note">当前选股模式：<b>${mode}</b>${formula ? `<br>${formula}` : ''}${usage ? `<br><span class="mode-usage">${usage}</span>` : ''}${policyLine ? `<br><span class="mode-policy">${policyLine}</span>` : ''}</div>
+      <div class="mode-note">当前选股模式：<b>${mode}</b>${formula ? `<br>${formula}` : ''}${usage ? `<br><span class="mode-usage">${usage}</span>` : ''}${noteLine ? `<br><span class="mode-policy">${noteLine}</span>` : ''}</div>
       <div class="btn-row">
         <button class="btn" data-action="buyAll">全仓买</button>
         <button class="btn" data-action="sellAll">清仓</button>

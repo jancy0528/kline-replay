@@ -181,13 +181,21 @@ VOLUME_MULTIPLE = 3.0
 BOTTOM_BUFFER = 0.15
 
 
-def technical_signals_bottom3x(daily: list[list], since: str) -> set[str]:
+def technical_signals_bottom3x(daily: list[list], since: str,
+                               code: str = '', amounts: dict | None = None,
+                               min_amount_yi: float = 0.0) -> set[str]:
     """【当前生效】用同一套「底部三倍量」公式在完整日线历史里补信号日。
 
     bars.ts 是 BaoStock 顺序 [date, open, high, low, close, volume]：
     O=b[1] H=b[2] L=b[3] C=b[4] V=b[5]（与 select_stocks.py 的腾讯顺序不同）。
     LLV(L,60) 含当日，与通达信口径、也与选股脚本保持一致。
+
+    2026-11-15：结果过滤层要求「3 倍量当日成交额 > 4.5 亿」，补充的形态日
+    也要满足同一门槛，否则训练局里会漏进被用户删除的形态。优先用
+    signal_amounts.json 里的 BaoStock 真实成交额；缺失时按
+    volume(股) × 前复权收盘价 / 1e8 估算（BaoStock 的 V 单位是股，不是手）。
     """
+    exact = (amounts or {}).get(code, {})
     out: set[str] = set()
     for i, b in enumerate(daily):
         if b[0] < since or i < BOTTOM_LOOKBACK:
@@ -199,14 +207,20 @@ def technical_signals_bottom3x(daily: list[list], since: str) -> set[str]:
         c, o = b[4], b[1]
         if lo <= 0 or c > lo * (1 + BOTTOM_BUFFER) or not c > o:
             continue
+        if min_amount_yi > 0:
+            amt = exact.get(b[0]) or (v * c / 1e8)
+            if amt <= min_amount_yi:
+                continue
         out.add(b[0])
     return out
 
 
-def technical_signals(daily: list[list], since: str, mode: str = 'bottom3x') -> set[str]:
+def technical_signals(daily: list[list], since: str, mode: str = 'bottom3x',
+                      code: str = '', amounts: dict | None = None,
+                      min_amount_yi: float = 0.0) -> set[str]:
     if mode == 'legacy':
         return technical_signals_legacy(daily, since)
-    return technical_signals_bottom3x(daily, since)
+    return technical_signals_bottom3x(daily, since, code, amounts, min_amount_yi)
 
 
 def make_games(symbols: dict, signals: dict[str, list[str]],
@@ -333,12 +347,21 @@ def main() -> int:
     first_minute_day = min((str(b[0])[:10] for v in minutes.values() for b in v),
                            default="2026-01-01")
     sig_range = selection.get("trainableSignalRange") or [first_minute_day, "9999-12-31"]
+    filters = selection.get("filters", {})
+    # 结果过滤层的量能门槛同样作用于「同公式历史形态日」，避免训练局里
+    # 漏进被用户删除的低量形态；精确成交额缓存由选股流程写入。
+    min_amount_yi = filters.get("minSignalAmountYi", 0) if filters.get("enabled") else 0
+    amounts = load_json(RAW / "signal_amounts.json", {})
     extra = {
-        c: {d for d in technical_signals(bars, first_minute_day, mode)
+        c: {d for d in technical_signals(bars, first_minute_day, mode,
+                                         c, amounts, min_amount_yi)
             if sig_range[0] <= d <= sig_range[1]}
         for c, bars in daily.items() if c in minutes
     }
     print(f"[mode] {mode}（旧三层规则代码保留但停用）")
+    if min_amount_yi:
+        print(f"[filter] 历史补充形态日同样要求当日成交额 > {min_amount_yi} 亿"
+              f"（精确成交额覆盖 {len(amounts)} 只）")
     print(f"[source] 日线 {len(daily)} 只 / {sum(len(v) for v in daily.values())} 根")
     print(f"[source] 5 分钟线 {minute_file.name} · {len(minutes)} 只 / "
           f"{sum(len(v) for v in minutes.values())} 根")
@@ -372,7 +395,7 @@ def main() -> int:
     history_bars = sum(len(v["day"]) for v in symbols.values())
     print(f"[trim] 分钟线保留 {kept_minutes} 根 / {len(symbols)} 只")
     body = {
-        "version": 9,
+        "version": 10,
         "windows": WINDOWS,
         "gameDays": GAME_DAYS,
         "symbols": symbols,
@@ -385,7 +408,7 @@ def main() -> int:
 
     rules = selection.get("rules", {})
     manifest = {
-        "version": 9,
+        "version": 10,
         "generatedAt": datetime.now(timezone.utc).isoformat(timespec="seconds"),
         "source": "baostock 前复权日线（2015 起完整历史） + baostock 5 分钟线（2025-08 起） + 腾讯股本快照",
         "adjust": "前复权，逐日按收盘价对齐",
@@ -396,6 +419,8 @@ def main() -> int:
         "selectionUsage": rules.get(
             "usage",
             "legacy: 三层规则选股"),
+        "selectionFilters": filters if filters.get("enabled") else None,
+        "sourceHits": selection.get("sourceHits"),
         "signalPolicy": {
             "historyScanDays": rules.get("historyScanDays", HISTORY_SCAN_DAYS),
             "minTrailingDays": rules.get("minTrailingDays", 0),

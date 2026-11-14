@@ -72,6 +72,23 @@ export interface DataManifest {
   selectionFormula?: string
   /** 选股用途说明（历史形态回捞 / 完整周期训练），只用于展示 */
   selectionUsage?: string
+  /** 结果过滤层（删除 ST / 市值区间 / 信号日量能），只用于查验展示 */
+  selectionFilters?: {
+    enabled: boolean
+    description: string
+    excludeST: boolean
+    minFloatMvYi: number
+    maxFloatMvYi: number
+    minSignalAmountYi: number
+    boundary?: string
+    amountBasis?: string
+    floatMvBasis?: string
+    stats?: Record<string, number>
+    keptSymbols?: number
+    keptSignals?: number
+  }
+  /** 过滤前的原始公式命中数，只用于展示 */
+  sourceHits?: { symbols: number; signals: number }
   /** 对局窗口的信号锚定策略，只用于展示 */
   signalPolicy?: {
     historyScanDays: number

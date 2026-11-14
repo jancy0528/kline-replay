@@ -128,7 +128,14 @@ def main() -> int:
     segs = segments(args.start, args.end)
     print(f"[fetch] {len(codes)} 只 · {args.start}~{args.end} · {len(segs)} 段/只", flush=True)
 
-    out: dict[str, list[list]] = {}
+    # 保留缓存里其它标的的合格长序列：每次换实训池都不要丢旧数据，
+    # 这样以后再切回去（或复用部分标的）能直接命中缓存，不必重拉。
+    out: dict[str, list[list]] = {
+        c: v for c, v in cache.items()
+        if v and len(v) > 5000 and str(v[0][0])[:10] <= args.start
+    }
+    if out:
+        print(f"[fetch] 复用长缓存 {len(out)} 只", flush=True)
     for i, code in enumerate(codes, 1):
         cached = cache.get(code)
         # 缓存必须「够长」且「起点够早」：历史信号日要落在缓存范围内，
@@ -163,7 +170,12 @@ def main() -> int:
     total = sum(len(v) for v in out.values())
     print(f"\n[ok] {OUT_FILE.name}  {len(out)} 只 / {total} 根 · "
           f"{OUT_FILE.stat().st_size/1024/1024:.2f} MB", flush=True)
-    return 0 if len(out) == len(codes) else 1
+    # out 会保留其它标的的历史缓存，所以不能用 len(out)==len(codes) 判定成功，
+    # 只检查本次 codes 是否都拿到了够长的序列。
+    missing = [c for c in codes if not out.get(c) or len(out[c]) < 5000]
+    if missing:
+        print(f"[warn] 以下标的分钟线不足：{missing}", flush=True)
+    return 0 if not missing else 1
 
 
 if __name__ == "__main__":
