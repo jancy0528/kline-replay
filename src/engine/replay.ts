@@ -188,6 +188,38 @@ export function configForWindow(
   }
 }
 
+/**
+ * 当前局的可序列化状态。行情本身不进快照（几 MB），只存局参数 + 时间游标，
+ * 行情由启动时加载的对局包按 dataFile 版本号还原；数据包换了就整套丢弃。
+ */
+export interface EngineSnapshot {
+  v: number
+  id: string
+  startedAt: number
+  code: string
+  game: Game
+  config: EngineConfig
+  now: number
+  view: PeriodKey
+  label: string
+  step: number
+  cash: number
+  shares: number
+  lockedShares: number
+  avgCost: number
+  trades: Trade[]
+  equityCurve: number[]
+  peakEquity: number
+  maxDrawdown: number
+  ended: boolean
+  wins: number
+  closedTrades: number
+  feeTotal: FeeBreakdown
+  orders: ConditionalOrder[]
+}
+
+export const ENGINE_SNAPSHOT_VERSION = 1
+
 const round2 = (n: number): number => Math.round(n * 100) / 100
 const round3 = (n: number): number => Math.round(n * 1000) / 1000
 const clamp = (n: number, lo: number, hi: number): number => Math.min(hi, Math.max(lo, n))
@@ -362,7 +394,13 @@ export class ReplayEngine {
   readonly startedAt: number
   readonly config: EngineConfig
 
-  private constructor(code: string, symbol: SymbolData, game: Game, config: EngineConfig) {
+  private constructor(
+    code: string,
+    symbol: SymbolData,
+    game: Game,
+    config: EngineConfig,
+    saved?: EngineSnapshot,
+  ) {
     this.code = code
     this.minBars = symbol.m5
     this.dayBars = symbol.day
@@ -386,9 +424,10 @@ export class ReplayEngine {
     this.config = config
     this.cash = config.initialCash
     this.peakEquity = config.initialCash
-    this.id = `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`
-    this.startedAt = Date.now()
+    this.id = saved?.id ?? `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`
+    this.startedAt = saved?.startedAt ?? Date.now()
     this.equityCurve.push(round2(this.equity))
+    if (saved) this.applySaved(saved)
   }
 
   static create(symbol: SymbolData, game: Game, config: EngineConfig = DEFAULT_CONFIG): ReplayEngine {
@@ -399,6 +438,93 @@ export class ReplayEngine {
     }
     const kind = classifyInstrument(game.c)
     return new ReplayEngine(game.c, symbol, game, { ...config, kind })
+  }
+
+  /** 把整局内存状态导出成纯数据，供本机续局使用。 */
+  snapshot(): EngineSnapshot {
+    return {
+      v: ENGINE_SNAPSHOT_VERSION,
+      id: this.id,
+      startedAt: this.startedAt,
+      code: this.code,
+      game: { c: this.code, s: this.start, e: this.end },
+      config: { ...this.config },
+      now: this.now,
+      view: this.view,
+      label: this.label,
+      step: this.step,
+      cash: this.cash,
+      shares: this.shares,
+      lockedShares: this.lockedShares,
+      avgCost: this.avgCost,
+      trades: this.trades.slice(),
+      equityCurve: this.equityCurve.slice(),
+      peakEquity: this.peakEquity,
+      maxDrawdown: this.maxDrawdown,
+      ended: this.ended,
+      wins: this.wins,
+      closedTrades: this.closedTrades,
+      feeTotal: { ...this.feeTotal },
+      orders: this.orders.slice(),
+    }
+  }
+
+  /**
+   * 从快照恢复一局。校验失败一律返回 null，调用方直接开新局，
+   * 绝不把损坏的存档带进训练流程。
+   */
+  static restore(
+    symbol: SymbolData,
+    game: Game,
+    snap: EngineSnapshot | null | undefined,
+  ): ReplayEngine | null {
+    if (!snap || snap.v !== ENGINE_SNAPSHOT_VERSION) return null
+    if (!snap.game || snap.game.c !== game.c || snap.game.s !== game.s || snap.game.e !== game.e) {
+      return null
+    }
+    if (snap.code !== game.c || !symbol.m5?.length || game.e >= symbol.m5.length) return null
+    if (!Number.isFinite(snap.now) || snap.now < game.s || snap.now > game.e) return null
+    const cfg = snap.config
+    if (!cfg || !Number.isFinite(cfg.initialCash) || !Number.isFinite(cfg.lotSize) || !cfg.fees?.stock) {
+      return null
+    }
+    try {
+      return new ReplayEngine(game.c, symbol, game, cfg, snap)
+    } catch {
+      return null
+    }
+  }
+
+  /** 覆盖构造时的初始状态；不重建行情，只还原账户、游标与统计。 */
+  private applySaved(s: EngineSnapshot): void {
+    // 游标必须是某个完整交易日的日末，避免旧存档停在日内导致泄题或进度错乱
+    const legal = this.dayEnds.filter((d) => d <= s.now)
+    this.now = legal.length ? legal[legal.length - 1] : (this.dayEnds[0] ?? this.start)
+    const views: PeriodKey[] = ['m5', 'day', 'week', 'month']
+    this.view = views.includes(s.view) ? s.view : this.config.view
+    this.label = typeof s.label === 'string' && s.label ? s.label : this.config.viewLabel
+    this.step = Number.isFinite(s.step) ? s.step : 0
+    this.cash = Number.isFinite(s.cash) ? s.cash : this.config.initialCash
+    this.shares = Math.max(0, Number.isFinite(s.shares) ? s.shares : 0)
+    this.lockedShares = clamp(Number.isFinite(s.lockedShares) ? s.lockedShares : 0, 0, this.shares)
+    this.avgCost = Number.isFinite(s.avgCost) ? s.avgCost : 0
+    this.trades.length = 0
+    if (Array.isArray(s.trades)) this.trades.push(...s.trades)
+    this.equityCurve.length = 0
+    if (Array.isArray(s.equityCurve) && s.equityCurve.length) {
+      this.equityCurve.push(...s.equityCurve)
+    } else {
+      this.equityCurve.push(round2(this.equity))
+    }
+    this.peakEquity = Number.isFinite(s.peakEquity) ? s.peakEquity : this.config.initialCash
+    this.maxDrawdown = Number.isFinite(s.maxDrawdown) ? s.maxDrawdown : 0
+    this.ended = !!s.ended
+    this.wins = Number.isFinite(s.wins) ? s.wins : 0
+    this.closedTrades = Number.isFinite(s.closedTrades) ? s.closedTrades : 0
+    this.feeTotal = { ...ZERO_FEES, ...(s.feeTotal ?? {}) }
+    this.orders = Array.isArray(s.orders) ? s.orders.slice() : []
+    this.visibleCache = null
+    this.fullCache = null
   }
 
   // ---- 视图与行情 ----------------------------------------------------

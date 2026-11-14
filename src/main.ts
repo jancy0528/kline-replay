@@ -63,6 +63,7 @@ import {
   type OrderStatus,
   type OrderTrigger,
 } from './engine/orders'
+import { loadSavedSession, saveSession } from './engine/session-state'
 import { ChartView, indicatorLegend } from './ui/chart'
 import { renderCurve } from './ui/curve'
 import { renderIntraday } from './ui/intraday'
@@ -1275,6 +1276,42 @@ function renderShell(): void {
 
 function render(): void {
   renderShell()
+  persistSession()
+}
+
+/** 每次状态变化都实时落盘，刷新或被系统回收后能接着上一局继续练。 */
+function persistSession(): void {
+  if (loading || !engine || !manifest || !currentGame || !sessions) return
+  saveSession({
+    dataFile: manifest.dataFile,
+    game: currentGame,
+    engine: engine.snapshot(),
+    review: view === 'review',
+    endSummaryShown,
+  })
+}
+
+/** 启动时优先续上上一局；存档与数据包不匹配就整套丢弃，重新开一局。 */
+function restoreSession(): boolean {
+  if (!sessions || !manifest) return false
+  const saved = loadSavedSession(manifest.dataFile)
+  if (!saved) return false
+  const symbol = sessions.symbols[saved.game.c]
+  if (!symbol) return false
+  const restored = ReplayEngine.restore(symbol, saved.game, saved.engine)
+  if (!restored) return false
+  engine = restored
+  currentGame = { ...saved.game }
+  result = null
+  draft = null
+  endSummaryShown = !!saved.endSummaryShown
+  view = 'train'
+  if (saved.review && restored.isEnded) {
+    // 复盘结果含完整日线，不进存档；用同一份状态重算，也不重复写训练记录
+    result = restored.finish()
+    view = 'review'
+  }
+  return true
 }
 
 function startGame(game?: Game): void {
@@ -1390,6 +1427,7 @@ function updateTrainUI(): void {
   set('s-fees', yuan2(engine.totalFees.total))
   const list = document.getElementById('trade-list')
   if (list) list.innerHTML = renderTrades(engine.tradeList)
+  persistSession()
 }
 
 function advanceStep(): void {
@@ -1402,6 +1440,8 @@ function advanceStep(): void {
   if (!hasMore && !endSummaryShown) {
     endSummaryShown = true
     openSummary('finished')
+    // 弹层标记也要落盘，刷新后不重复弹总结
+    persistSession()
   }
 }
 
@@ -1836,7 +1876,7 @@ async function boot(): Promise<void> {
     if (!sessions.games.length || !sessions.windows.length) {
       throw new Error('对局包不完整')
     }
-    startGame()
+    if (!restoreSession()) startGame()
     loading = false
     render()
     startAutoSync()
