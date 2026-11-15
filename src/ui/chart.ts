@@ -3,6 +3,8 @@ import type { Candle, TradeMarker } from '../engine/replay'
 
 /** 十字光标回看：candle 为光标所指 K 线，dataIndex 是它在可见序列里的下标；candle=null 表示光标离开。 */
 export type CrosshairHandler = (candle: Candle | null, dataIndex: number) => void
+/** 轻点「选定」一根 K 线，不会传 null。 */
+export type SelectHandler = (candle: Candle, dataIndex: number) => void
 
 const BASE_TS = Date.UTC(2020, 0, 1)
 const DAY_MS = 86_400_000
@@ -194,23 +196,53 @@ export class ChartView {
   private markers: TradeMarker[] = []
   private readonly container: HTMLElement
   private readonly onCrosshair?: CrosshairHandler
+  /** 轻点「选定」一根 K 线：长按拖动只算临时回看，不产生选定。 */
+  private readonly onSelect?: SelectHandler
   private maVisible: boolean
   private bsVisible: boolean
   private crosshairAction: ((data?: unknown) => void) | null = null
   /** 库在光标消失时不会派发 onCrosshairChange，只能靠这些 DOM 事件补一个「离开」信号。 */
   private readonly leaveEvents = ['pointerleave', 'touchend', 'touchcancel', 'pointercancel'] as const
   private readonly onLeave = (): void => this.onCrosshair?.(null, -1)
+  /** 轻点判定：按下到抬起的时间与位移都小，才认为是在「选定」一根 K 线。 */
+  private pointerStart: { x: number; y: number; t: number } | null = null
+  private readonly onPointerDown = (e: PointerEvent): void => {
+    this.pointerStart = { x: e.clientX, y: e.clientY, t: performance.now() }
+  }
+  private readonly onPointerUp = (e: PointerEvent): void => {
+    const start = this.pointerStart
+    this.pointerStart = null
+    if (!start || !this.onSelect) return
+    const moved = Math.hypot(e.clientX - start.x, e.clientY - start.y)
+    if (moved > 10 || performance.now() - start.t > 400) return
+    this.pickAt(e.clientX)
+  }
+
+  /** 把屏幕 x 换算成 K 线下标，交给上层作为「选定」的那根。 */
+  private pickAt(clientX: number): void {
+    if (!this.chart || !this.onSelect || !this.candles.length) return
+    const rect = this.container.getBoundingClientRect()
+    const converted = this.chart.convertFromPixel([{ x: clientX - rect.left }])
+    const point = Array.isArray(converted) ? converted[0] : converted
+    const raw = point?.dataIndex
+    if (typeof raw !== 'number' || !Number.isFinite(raw)) return
+    const index = Math.max(0, Math.min(this.candles.length - 1, Math.round(raw)))
+    const candle = this.candles[index]
+    if (candle) this.onSelect(candle, index)
+  }
 
   constructor(
     container: HTMLElement,
     onCrosshair?: CrosshairHandler,
     maVisible = true,
     bsVisible = true,
+    onSelect?: SelectHandler,
   ) {
     this.container = container
     this.onCrosshair = onCrosshair
     this.maVisible = maVisible
     this.bsVisible = bsVisible
+    this.onSelect = onSelect
   }
 
   mount(): void {
@@ -269,6 +301,9 @@ export class ChartView {
     chart.subscribeAction('onCrosshairChange', this.crosshairAction)
     // 光标消失（抬手 / 鼠标移出）时库不会派发事件，靠 DOM 事件补「离开」。
     for (const name of this.leaveEvents) this.container.addEventListener(name, this.onLeave)
+    // 轻点 = 选定一根 K 线；长按 / 拖动由上面的阈值过滤掉。
+    this.container.addEventListener('pointerdown', this.onPointerDown)
+    this.container.addEventListener('pointerup', this.onPointerUp)
     if (!this.maVisible) chart.removeIndicator({ paneId: 'candle_pane', name: 'MA' })
   }
 
@@ -457,6 +492,9 @@ export class ChartView {
       this.crosshairAction = null
     }
     for (const name of this.leaveEvents) this.container.removeEventListener(name, this.onLeave)
+    this.container.removeEventListener('pointerdown', this.onPointerDown)
+    this.container.removeEventListener('pointerup', this.onPointerUp)
+    this.pointerStart = null
     dispose(this.chart)
     this.chart = null
     this.pushBar = null

@@ -131,8 +131,11 @@ let tradeSide: 'buy' | 'sell' = 'buy'
 let intradayEl: HTMLDivElement | null = null
 /** 「重置账户」二次确认弹层，同样挂在 body 上；与其余弹层互斥 */
 let resetEl: HTMLDivElement | null = null
-/** 十字光标当前回看的那根 K 线；抬手后仍保留，让气泡上的按钮点得到。 */
+/** 气泡当前指向的那根日 K 线；没有选中任何 K 线时为 null，气泡随之隐藏。 */
 let crosshairCandle: Candle | null = null
+/** 轻点「点定」的那根 K 线：抬手 / 移出后仍算选中，气泡保持，方便点【查看分时】。 */
+let selectedCandle: Candle | null = null
+let selectedIndex = -1
 /** 均线显示开关，本机记住，默认开。 */
 const MA_PREF_KEY = 'kline-ma-visible'
 let showMA = ((): boolean => {
@@ -914,7 +917,8 @@ function renderTrades(trades: Trade[]): string {
 }
 
 /**
- * 图表右上角一小条：B/S 买卖点开关常驻，【查看分时】气泡只在日K 级别出现。
+ * 图表右上角一小条：B/S 买卖点开关常驻，【查看分时】气泡只在日K 级别、
+ * 且当前选中了某根日 K 线时才出现（默认 hidden，由十字光标事件亮出）。
  * 左上角被 KLineCharts 的 OHLC / MA 浮层占着，右上角既不挡行情也不挡 K 线；
  * 两个控件放同一行、开关固定在最右，避免气泡亮出时互相压住。
  */
@@ -953,12 +957,47 @@ function restoreLegend(sliced?: Candle[]): void {
   }
 }
 
-/** 收起气泡并忘掉回看的 K 线：推进、买卖、切窗口、重渲染时都要调。 */
+/** 报价与图例回到当前训练日。 */
+function backToCurrentQuote(): void {
+  const wrap = document.getElementById('quote-wrap')
+  if (wrap && engine) wrap.innerHTML = quotePanel(engine.quoteMetrics())
+  restoreLegend()
+}
+
+/** 报价与图例切成某根 K 线那天的行情；返回该日是否有行情数据。 */
+function showQuoteFor(candle: Candle, dataIndex: number): boolean {
+  if (!engine) return false
+  const q = engine.quoteAt(candle.label)
+  if (!q) return false
+  const wrap = document.getElementById('quote-wrap')
+  if (wrap) wrap.innerHTML = quotePanel(q, true)
+  const source = view === 'review' && result ? result.candles : engine.visible()
+  restoreLegend(source.slice(0, Math.max(1, dataIndex + 1)))
+  return true
+}
+
+/** 亮出气泡，并按该日有没有分钟线设置按钮文案。 */
+function showCrosshairTip(candle: Candle): void {
+  const tip = document.getElementById('crosshair-tip')
+  if (!tip) return
+  tip.hidden = false
+  const btn = tip.querySelector<HTMLButtonElement>('[data-action="viewIntraday"]')
+  if (btn) {
+    const ok = engine?.hasIntraday(candle.label) ?? false
+    btn.classList.toggle('no-data', !ok)
+    // 文案保持 4 字以内：气泡变宽会把它挤向左侧 OHLC 浮层
+    btn.textContent = ok ? '查看分时' : '无分时'
+  }
+}
+
+/** 立刻收起气泡并忘掉选中：推进、买卖、切窗口、重渲染、打开分时弹层时都要调。 */
 function clearCrosshair(): void {
   crosshairCandle = null
+  selectedCandle = null
+  selectedIndex = -1
   const tip = document.getElementById('crosshair-tip')
   if (tip) tip.hidden = true
-  restoreLegend()
+  backToCurrentQuote()
 }
 
 function closeIntradaySheet(): void {
@@ -993,41 +1032,52 @@ function openIntradaySheet(data: IntradayData, date: string): void {
 }
 
 /**
- * 图表十字光标指向某根 K 线时，顶部「价格 / 市值 / 额 / 流通 / 换」
- * 与均线图例数值整块切成那一天的行情，并亮出【查看分时】气泡。
- * 抬手后库不再派发事件，ChartView 会回调 candle=null，此时报价与图例回到
- * 当前训练日，气泡则保留在最后选中的那根 K 线上，保证手指能点到按钮。
+ * 十字光标指向某根 K 线时，顶部「价格 / 市值 / 额 / 流通 / 换」与均线图例
+ * 整块切成那一天的行情，同时亮出【查看分时】气泡。
+ *
+ * 气泡只在「当前选中了一根日 K 线」时存在：
+ * - 长按 / 拖动 / hover 属于临时选中，光标一消失（抬手、移出）气泡立刻隐藏；
+ * - 轻点一根 K 线会「点定」它，光标消失后仍算选中，气泡保持，手指才点得到按钮；
+ * - 再次点同一根 = 取消选中；推进、成交、切窗口、重渲染、打开分时弹层也会取消。
  */
 function onChartCrosshair(candle: Candle | null, dataIndex: number): void {
   if (!engine || (view !== 'train' && view !== 'review')) return
-  const wrap = document.getElementById('quote-wrap')
   if (!candle) {
-    if (wrap) wrap.innerHTML = quotePanel(engine.quoteMetrics())
-    restoreLegend()
+    // 已点定一根 K 线：光标消失后报价、图例和气泡都留在那天
+    if (selectedCandle) {
+      if (!showQuoteFor(selectedCandle, selectedIndex)) {
+        clearCrosshair()
+        return
+      }
+      crosshairCandle = selectedCandle
+      showCrosshairTip(selectedCandle)
+      return
+    }
+    crosshairCandle = null
+    const tip = document.getElementById('crosshair-tip')
+    if (tip) tip.hidden = true
+    backToCurrentQuote()
     return
   }
-  const q = engine.quoteAt(candle.label)
-  if (!q) {
+  if (!showQuoteFor(candle, dataIndex)) {
     // 越界（理论上图表上不会出现未来 K）：别让气泡指向一根没有行情的 K 线
     clearCrosshair()
-    if (wrap) wrap.innerHTML = quotePanel(engine.quoteMetrics())
-    restoreLegend()
     return
   }
   crosshairCandle = candle
-  if (wrap) wrap.innerHTML = quotePanel(q, true)
-  const source = view === 'review' && result ? result.candles : engine.visible()
-  restoreLegend(source.slice(0, Math.max(1, dataIndex + 1)))
-  const tip = document.getElementById('crosshair-tip')
-  if (!tip) return
-  tip.hidden = false
-  const btn = tip.querySelector<HTMLButtonElement>('[data-action="viewIntraday"]')
-  if (btn) {
-    const ok = engine.hasIntraday(candle.label)
-    btn.classList.toggle('no-data', !ok)
-    // 文案保持 4 字以内：气泡变宽会把它挤向左侧 OHLC 浮层
-    btn.textContent = ok ? '查看分时' : '无分时'
+  showCrosshairTip(candle)
+}
+
+/** 轻点「选定」一根日 K 线；再点同一根则取消选中。 */
+function onChartSelect(candle: Candle, dataIndex: number): void {
+  if (!engine || (view !== 'train' && view !== 'review')) return
+  if (selectedCandle && selectedCandle.label === candle.label) {
+    clearCrosshair()
+    return
   }
+  selectedCandle = candle
+  selectedIndex = dataIndex
+  onChartCrosshair(candle, dataIndex)
 }
 
 function mountChart(candles: Candle[], intraday: boolean, markers: TradeMarker[] = []): void {
@@ -1035,7 +1085,7 @@ function mountChart(candles: Candle[], intraday: boolean, markers: TradeMarker[]
   if (intraday) return
   const el = document.querySelector<HTMLElement>('#chart')
   if (!el) return
-  chartView = new ChartView(el, onChartCrosshair, showMA, showBS)
+  chartView = new ChartView(el, onChartCrosshair, showMA, showBS, onChartSelect)
   chartView.mount()
   chartView.setBars(candles)
   chartView.setMarkers(markers)
@@ -1873,7 +1923,7 @@ async function handle(action: string, target: HTMLElement): Promise<void> {
     }
     case 'viewIntraday': {
       if (!engine || !crosshairCandle) {
-        toast('先长按 K 线选中某一天')
+        toast('先点选一根日 K 线')
         return
       }
       const date = crosshairCandle.label.slice(0, 10)
