@@ -195,15 +195,22 @@ export class ChartView {
   private readonly container: HTMLElement
   private readonly onCrosshair?: CrosshairHandler
   private maVisible: boolean
+  private bsVisible: boolean
   private crosshairAction: ((data?: unknown) => void) | null = null
   /** 库在光标消失时不会派发 onCrosshairChange，只能靠这些 DOM 事件补一个「离开」信号。 */
   private readonly leaveEvents = ['pointerleave', 'touchend', 'touchcancel', 'pointercancel'] as const
   private readonly onLeave = (): void => this.onCrosshair?.(null, -1)
 
-  constructor(container: HTMLElement, onCrosshair?: CrosshairHandler, maVisible = true) {
+  constructor(
+    container: HTMLElement,
+    onCrosshair?: CrosshairHandler,
+    maVisible = true,
+    bsVisible = true,
+  ) {
     this.container = container
     this.onCrosshair = onCrosshair
     this.maVisible = maVisible
+    this.bsVisible = bsVisible
   }
 
   mount(): void {
@@ -299,8 +306,9 @@ export class ChartView {
 
   private applyMarkers(): void {
     if (!this.chart) return
+    // 关掉开关时只清掉本组 overlay，markers 仍缓存在实例里，再打开即可原样恢复。
     this.chart.removeOverlay({ groupId: MARKER_GROUP })
-    if (!this.markers.length) return
+    if (!this.bsVisible || !this.markers.length) return
     ensureMarkerOverlay()
     for (const m of this.markers) {
       this.chart.createOverlay({
@@ -369,6 +377,13 @@ export class ChartView {
     } else {
       this.chart.removeIndicator({ paneId: 'candle_pane', name: 'MA' })
     }
+  }
+
+  /** B/S 买卖点显示开关：与均线开关一样走「删建重绘」，成交量柱不受影响。 */
+  setBSVisible(visible: boolean): void {
+    if (this.bsVisible === visible) return
+    this.bsVisible = visible
+    this.applyMarkers()
   }
 
   /** 放大/缩小：库内部允许的最小 K 线宽度是 1px，一屏约 350 根。 */

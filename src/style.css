@@ -1833,16 +1833,62 @@ body.summary-open { overflow: hidden; }
 .indicator-legend .ma-toggle.on i { transform: translateX(14px); background: #9cc4ff; }
 .indicator-legend .ma-off-hint { flex: 0 0 auto; color: var(--muted); }
 
-/* ---- 光标竖线上的【查看分时】小气泡 -------------------------------- */
-.chart-crosshair-tip {
+/* ---- 图表右上角：B/S 买卖点开关 + 【查看分时】气泡 ------------------- */
+.chart-top-tools {
   position: absolute;
   top: 8px;
-  right: 50px;
+  right: 50px;              /* 让开 KLineCharts 右侧的价格刻度 */
   z-index: 1000;
   display: flex;
   align-items: center;
-  gap: 4px;
-  padding: 4px 5px;
+  justify-content: flex-end;
+  gap: 6px;
+  pointer-events: none;     /* 空白区不挡长按十字光标 */
+}
+.chart-top-tools > * { pointer-events: auto; }
+
+.bs-toggle {
+  position: relative;
+  flex: 0 0 auto;
+  height: 22px;
+  padding: 0 6px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: rgba(26, 32, 48, 0.9);
+  color: var(--muted);
+  font-family: inherit;
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.3px;
+  line-height: 20px;
+  white-space: nowrap;
+  cursor: pointer;
+  touch-action: manipulation;
+}
+/* 状态点不占布局宽度，避免把左边的【查看分时】气泡推向 OHLC 浮层 */
+.bs-toggle i {
+  position: absolute;
+  top: 2px;
+  right: 2px;
+  width: 4px;
+  height: 4px;
+  border-radius: 50%;
+  background: var(--muted);
+}
+.bs-toggle.on {
+  border-color: rgba(110, 168, 254, 0.55);
+  background: rgba(110, 168, 254, 0.18);
+  color: #cfe1ff;
+}
+.bs-toggle.on i { background: #9cc4ff; box-shadow: 0 0 4px #9cc4ff; }
+.bs-toggle:active { background: rgba(110, 168, 254, 0.32); }
+
+.chart-crosshair-tip {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  /* 越窄越靠右，左缘才不会压到 KLineCharts 的「高 / 成交量」浮层 */
+  padding: 3px 4px;
   border: 1px solid rgba(255, 255, 255, 0.18);
   border-radius: 8px;
   background: rgba(26, 32, 48, 0.94);
@@ -1852,7 +1898,7 @@ body.summary-open { overflow: hidden; }
 }
 .chart-crosshair-tip[hidden] { display: none; }
 .chart-crosshair-tip button {
-  padding: 4px 9px;
+  padding: 4px 7px;
   border: 1px solid rgba(110, 168, 254, 0.5);
   border-radius: 5px;
   background: rgba(110, 168, 254, 0.16);
@@ -1869,15 +1915,6 @@ body.summary-open { overflow: hidden; }
   border-color: var(--line);
   background: transparent;
   color: var(--muted);
-}
-.chart-crosshair-tip .tip-close {
-  width: 22px;
-  padding: 3px 0;
-  border-color: var(--line);
-  background: transparent;
-  color: var(--muted);
-  font-size: 13px;
-  font-weight: 400;
 }
 /* ---- 【查看分时】弹出的当日分时图 ---------------------------------- */
 .intraday-mask {

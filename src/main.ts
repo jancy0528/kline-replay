@@ -142,6 +142,15 @@ let showMA = ((): boolean => {
     return true
   }
 })()
+/** B/S 买卖点显示开关，本机记住，默认开；K 线与分时图共用。 */
+const BS_PREF_KEY = 'kline-bs-visible'
+let showBS = ((): boolean => {
+  try {
+    return window.localStorage.getItem(BS_PREF_KEY) !== '0'
+  } catch {
+    return true
+  }
+})()
 
 function toast(message: string): void {
   let node = document.querySelector<HTMLDivElement>('#toast')
@@ -903,15 +912,32 @@ function renderTrades(trades: Trade[]): string {
 }
 
 /**
- * 长按 / 移动十字光标时出现的小气泡，对齐原版【查看分时】。
- * 固定在图表右上角：左上角被 KLineCharts 的 OHLC / MA 浮层占着，
- * 跟随光标会压住那几行字，右上角既不挡行情也不挡 K 线。
+ * 图表右上角一小条：B/S 买卖点开关常驻，【查看分时】气泡只在日K 级别出现。
+ * 左上角被 KLineCharts 的 OHLC / MA 浮层占着，右上角既不挡行情也不挡 K 线；
+ * 两个控件放同一行、开关固定在最右，避免气泡亮出时互相压住。
  */
-function crosshairTip(): string {
-  return `<div class="chart-crosshair-tip" id="crosshair-tip" hidden>
+function chartTopTools(showTip: boolean): string {
+  // 按钮尽量窄：整条右对齐，气泡被挤到左边会压住 KLineCharts 的 OHLC 浮层。
+  // 状态点用绝对定位，不占文字宽度。
+  const toggle = `<button class="bs-toggle ${showBS ? 'on' : ''}" data-action="toggleBS"
+    aria-pressed="${showBS}" aria-label="${showBS ? '隐藏买卖点' : '显示买卖点'}"
+    title="${showBS ? '隐藏 B/S 买卖点' : '显示 B/S 买卖点'}">BS<i></i></button>`
+  const tip = showTip
+    ? `<div class="chart-crosshair-tip" id="crosshair-tip" hidden>
     <button data-action="viewIntraday">查看分时</button>
-    <button class="tip-close" data-action="closeCrosshair" aria-label="关闭气泡">×</button>
   </div>`
+    : ''
+  return `<div class="chart-top-tools">${tip}${toggle}</div>`
+}
+
+/** 不整页重渲染地同步开关状态（updateTrainUI 只局部刷 DOM）。 */
+function syncBSToggle(): void {
+  const btn = document.querySelector<HTMLButtonElement>('.bs-toggle')
+  if (!btn) return
+  btn.classList.toggle('on', showBS)
+  btn.setAttribute('aria-pressed', String(showBS))
+  btn.setAttribute('aria-label', showBS ? '隐藏买卖点' : '显示买卖点')
+  btn.title = showBS ? '隐藏 B/S 买卖点' : '显示 B/S 买卖点'
 }
 
 /** 均线图例恢复成最新一根 K 的数值；传 sliced 则显示光标所在那根的 MA。 */
@@ -944,7 +970,7 @@ function openIntradaySheet(data: IntradayData, date: string): void {
   if (intradayEl || summaryEl || tradeEl || !engine) return
   clearCrosshair()
   const fallback = data.points[data.points.length - 1]?.time ?? '15:00'
-  const marks = intradayMarks(engine.tradeList, date, fallback)
+  const marks = showBS ? intradayMarks(engine.tradeList, date, fallback) : []
   const mask = document.createElement('div')
   mask.className = 'intraday-mask'
   mask.innerHTML = `<div class="intraday-sheet" role="dialog" aria-modal="true" aria-labelledby="intraday-title">
@@ -997,7 +1023,8 @@ function onChartCrosshair(candle: Candle | null, dataIndex: number): void {
   if (btn) {
     const ok = engine.hasIntraday(candle.label)
     btn.classList.toggle('no-data', !ok)
-    btn.textContent = ok ? '查看分时' : '该日无分时'
+    // 文案保持 4 字以内：气泡变宽会把它挤向左侧 OHLC 浮层
+    btn.textContent = ok ? '查看分时' : '无分时'
   }
 }
 
@@ -1006,7 +1033,7 @@ function mountChart(candles: Candle[], intraday: boolean, markers: TradeMarker[]
   if (intraday) return
   const el = document.querySelector<HTMLElement>('#chart')
   if (!el) return
-  chartView = new ChartView(el, onChartCrosshair, showMA)
+  chartView = new ChartView(el, onChartCrosshair, showMA, showBS)
   chartView.mount()
   chartView.setBars(candles)
   chartView.setMarkers(markers)
@@ -1023,7 +1050,7 @@ function renderTrain(): void {
   const avg = id?.points[id.points.length - 1]?.avg ?? q.price
   const legend = intraday ? intradayLegend(q, avg) : indicatorLegend(candles, e.viewLabel, showMA)
   const markers = intraday ? [] : tradeMarkers(candles, e.tradeList)
-  const dayMarks = id
+  const dayMarks = id && showBS
     ? intradayMarks(e.tradeList, id.date, id.points[id.points.length - 1]?.time ?? '15:00')
     : []
   app.innerHTML = `${header('train')}
@@ -1034,7 +1061,8 @@ function renderTrain(): void {
       <div class="chart-area">
         ${intraday
           ? `<div id="intraday-wrap">${renderIntraday(id, dayMarks)}</div>`
-          : `<div id="chart" class="chart"></div>${crosshairTip()}`}
+          : '<div id="chart" class="chart"></div>'}
+        ${chartTopTools(!intraday && e.currentView === 'day')}
         ${chartOverlayTools(intraday)}
       </div>
       <div id="action-bar-wrap">${actionBar(e)}</div>
@@ -1089,7 +1117,7 @@ function renderReview(): void {
         <div><span>交易 / 胜率</span><b>${r.score.tradeCount} / ${r.score.winRate}%</b></div>
       </section>
       <div class="indicator-legend" id="indicator-legend">${indicatorLegend(r.candles, r.periodLabel, showMA)}</div>
-      <div class="chart-area"><div id="chart" class="chart"></div>${crosshairTip()}${chartOverlayTools(false)}</div>
+      <div class="chart-area"><div id="chart" class="chart"></div>${chartTopTools(r.period === 'day')}${chartOverlayTools(false)}</div>
       ${chartTools(false)}
       <p class="blind-note">上图为完整走势，<b class="up">B</b> 买入 / <b class="down">S</b> 卖出已标在 K 线上；下方资金曲线同步标注</p>
       <section class="panel">
@@ -1588,7 +1616,7 @@ function updateTrainUI(): void {
 
   if (intraday) {
     const id = e.intraday()
-    const dayMarks = id
+    const dayMarks = id && showBS
       ? intradayMarks(e.tradeList, id.date, id.points[id.points.length - 1]?.time ?? '15:00')
       : []
     const box = document.getElementById('intraday-wrap')
@@ -1818,6 +1846,29 @@ async function handle(action: string, target: HTMLElement): Promise<void> {
       toast(showMA ? '均线已显示' : '均线已隐藏')
       return
     }
+    case 'toggleBS': {
+      showBS = !showBS
+      try {
+        window.localStorage.setItem(BS_PREF_KEY, showBS ? '1' : '0')
+      } catch {
+        // 本机存储不可用也不影响本局开关
+      }
+      chartView?.setBSVisible(showBS)
+      syncBSToggle()
+      // 分时图是自绘 SVG，标记不走 ChartView，得单独重画一次。
+      if (engine && engine.currentView === 'm5') {
+        const box = document.getElementById('intraday-wrap')
+        if (box) {
+          const id = engine.intraday()
+          const marks = id && showBS
+            ? intradayMarks(engine.tradeList, id.date, id.points[id.points.length - 1]?.time ?? '15:00')
+            : []
+          box.innerHTML = renderIntraday(id, marks)
+        }
+      }
+      toast(showBS ? '买卖点已显示' : '买卖点已隐藏')
+      return
+    }
     case 'viewIntraday': {
       if (!engine || !crosshairCandle) {
         toast('先长按 K 线选中某一天')
@@ -1830,14 +1881,6 @@ async function handle(action: string, target: HTMLElement): Promise<void> {
         return
       }
       openIntradaySheet(data, date)
-      return
-    }
-    case 'closeCrosshair': {
-      clearCrosshair()
-      if (engine && view === 'train') {
-        const wrap = document.getElementById('quote-wrap')
-        if (wrap) wrap.innerHTML = quotePanel(engine.quoteMetrics())
-      }
       return
     }
     case 'buy':
