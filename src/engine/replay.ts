@@ -154,7 +154,13 @@ export interface SessionResult {
 }
 
 export interface EngineConfig {
+  /** 本局开局资金：换股时承接上一局权益（持仓按当前价折算成现金） */
   initialCash: number
+  /**
+   * 账户起始本金：总资产 / 总盈亏 / 收益率的累计基准。
+   * 换股不会变，只有点界面上的「重置」才回到 10 万；随存档一起恢复。
+   */
+  baseCapital: number
   visibleBars: number
   fees: FeeSchedule
   kind: InstrumentKind
@@ -166,6 +172,7 @@ export interface EngineConfig {
 
 export const DEFAULT_CONFIG: EngineConfig = {
   initialCash: 100000,
+  baseCapital: 100000,
   visibleBars: 60,
   fees: DEFAULT_FEE_SCHEDULE,
   kind: 'stock',
@@ -362,6 +369,8 @@ export function intradayMarks(
  * 提前暴露。
  */
 export class ReplayEngine {
+  /** 账户起始本金：累计盈亏的基准；旧存档没有该字段时回退到本局开局资金。 */
+  private readonly accountBase: number
   private readonly minBars: Bar[]
   private readonly dayBars: Bar[]
   private readonly fund: Fundamentals | null
@@ -434,6 +443,9 @@ export class ReplayEngine {
     this.view = config.view
     this.label = config.viewLabel
     this.config = config
+    this.accountBase = Number.isFinite(config.baseCapital) && config.baseCapital > 0
+      ? config.baseCapital
+      : config.initialCash
     this.cash = config.initialCash
     this.peakEquity = config.initialCash
     this.id = saved?.id ?? `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`
@@ -540,6 +552,11 @@ export class ReplayEngine {
   }
 
   // ---- 视图与行情 ----------------------------------------------------
+
+  /** 账户起始本金，换股时供下一局继承。 */
+  get baseCapital(): number {
+    return this.accountBase
+  }
 
   get currentView(): PeriodKey {
     return this.view
@@ -944,12 +961,29 @@ export class ReplayEngine {
     return round2(this.shares * this.currentPrice)
   }
 
+  /**
+   * 账户累计盈亏：相对起始本金（10 万），换股不清零，只有点「重置」才归零。
+   * 换股时新局带着上一局权益开局，所以这里不能用本局的 initialCash。
+   */
   get profit(): number {
-    return round2(this.equity - this.config.initialCash)
+    return round2(this.equity - this.accountBase)
   }
 
   get profitPct(): number {
-    return round2((this.equity / this.config.initialCash - 1) * 100)
+    return this.accountBase > 0
+      ? round2((this.equity / this.accountBase - 1) * 100)
+      : 0
+  }
+
+  /** 本局（这只股票）相对开局资金的盈亏；复盘评分、训练记录保持本局口径。 */
+  get sessionProfit(): number {
+    return round2(this.equity - this.config.initialCash)
+  }
+
+  get sessionProfitPct(): number {
+    return this.config.initialCash > 0
+      ? round2((this.equity / this.config.initialCash - 1) * 100)
+      : 0
   }
 
   get tradeList(): Trade[] {

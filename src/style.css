@@ -1905,3 +1905,78 @@ body.summary-open { overflow: hidden; }
 }
 .intraday-sheet-body { margin-top: 12px; }
 .intraday-sheet-tip { margin: 10px 2px 0; font-size: 11px; }
+
+/* ---- 账户重置：收益率后的小入口 + 二次确认弹层 ---------------------- */
+/* 挂在 .pos-label 里而不是另起一格，四列网格才不会被撑坏 */
+.position-grid .pos-label .reset-account-btn {
+  flex: 0 0 auto;
+  margin-left: 1px;
+  padding: 1px 4px;
+  border: 1px solid rgba(240, 69, 75, 0.75);
+  border-radius: 4px;
+  background: rgba(240, 69, 75, 0.16);
+  color: #ff8287;
+  font-family: inherit;
+  font-size: 9px;
+  font-weight: 700;
+  line-height: 13px;
+  letter-spacing: 0.5px;
+  cursor: pointer;
+  touch-action: manipulation;
+}
+.position-grid .pos-label .reset-account-btn:active {
+  background: rgba(240, 69, 75, 0.34);
+}
+
+.reset-sheet { max-width: 420px; }
+.reset-body { margin-top: 10px; }
+.reset-line {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  margin: 9px 0;
+  color: var(--muted);
+  font-size: 13px;
+}
+.reset-line b {
+  color: var(--text);
+  font-size: 15px;
+  font-variant-numeric: tabular-nums;
+}
+.reset-warn {
+  margin: 14px 0 0;
+  padding: 10px 12px;
+  border: 1px solid rgba(240, 69, 75, 0.34);
+  border-radius: 8px;
+  background: rgba(240, 69, 75, 0.09);
+  color: var(--text);
+  font-size: 12.5px;
+  line-height: 1.65;
+}
+.reset-warn b { color: #ff8287; }
+.reset-actions {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+  margin-top: 18px;
+}
+.reset-actions button {
+  min-height: 44px;
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  background: transparent;
+  color: var(--text);
+  font-family: inherit;
+  font-size: 15px;
+  cursor: pointer;
+  touch-action: manipulation;
+}
+.reset-actions button:active { background: var(--bg); }
+.reset-actions .reset-confirm {
+  border-color: var(--up);
+  background: var(--up);
+  color: #fff;
+  font-weight: 700;
+}
+.reset-actions .reset-confirm:active { background: #d83b41; }

@@ -129,6 +129,8 @@ let tradeEl: HTMLDivElement | null = null
 let tradeSide: 'buy' | 'sell' = 'buy'
 /** 【查看分时】弹层，同样挂在 body 上 */
 let intradayEl: HTMLDivElement | null = null
+/** 「重置账户」二次确认弹层，同样挂在 body 上；与其余弹层互斥 */
+let resetEl: HTMLDivElement | null = null
 /** 十字光标当前回看的那根 K 线；抬手后仍保留，让气泡上的按钮点得到。 */
 let crosshairCandle: Candle | null = null
 /** 均线显示开关，本机记住，默认开。 */
@@ -186,11 +188,12 @@ function summarySheet(e: ReplayEngine, reason: 'switch' | 'finished'): string {
     </div>
     <div class="summary-body">
       <div class="summary-title-row">
-        <b>本股总收益</b>
+        <b>账户累计收益</b>
         <button class="link" data-summary-action="share">分享</button>
       </div>
       <p class="summary-profit ${profitCls}">收益 ${sign}¥${nf.format(Math.abs(profit))}</p>
-      <p class="summary-sub">收益率 ${pct(e.profitPct)} · 交易 ${e.tradeList.length} 次 · 已训练 ${range.daysPlayed} / ${range.totalDays} 天</p>
+      <p class="summary-sub">累计收益率 ${pct(e.profitPct)} · 本股 ${signedMoney(e.sessionProfit)}（${pct(e.sessionProfitPct)}）</p>
+      <p class="summary-sub">交易 ${e.tradeList.length} 次 · 已训练 ${range.daysPlayed} / ${range.totalDays} 天</p>
       <p class="summary-stock">${stockName(e.code)} <span>${shortCode(e.code)}</span>
         <button class="link" data-summary-action="restart">重新训练</button></p>
       <p class="summary-range">${compactDate(range.start)} - ${compactDate(range.end)} 区间涨幅 <b class="${rangeCls}">${pct(range.rangePct)}</b></p>
@@ -231,7 +234,7 @@ function closeSummary(): void {
 
 /** 两种弹层都在 body 上，滚动锁由「是否还有弹层开着」统一决定。 */
 function syncBodyLock(): void {
-  document.body.classList.toggle('summary-open', !!(summaryEl || tradeEl || intradayEl))
+  document.body.classList.toggle('summary-open', !!(summaryEl || tradeEl || intradayEl || resetEl))
 }
 
 /** 结束本局并落一条训练记录；复盘 / 换股 / 重新训练三个出口共用，避免重复计数。 */
@@ -255,7 +258,7 @@ async function shareSummary(): Promise<void> {
   const text = [
     `K线训练 · ${stockName(engine.code)}(${shortCode(engine.code)})`,
     `${compactDate(r.start)} - ${compactDate(r.end)} 区间涨幅 ${pct(r.rangePct)}`,
-    `本股总收益 ${engine.profit >= 0 ? '+' : '-'}¥${nf.format(Math.abs(engine.profit))}（${pct(engine.profitPct)}）`,
+    `账户累计收益 ${engine.profit >= 0 ? '+' : '-'}¥${nf.format(Math.abs(engine.profit))}（${pct(engine.profitPct)}）`,
     `已训练 ${r.daysPlayed} / ${r.totalDays} 天 · 交易 ${engine.tradeList.length} 次`,
   ].join('\n')
   const nav = navigator as Navigator & { share?: (data: ShareData) => Promise<void> }
@@ -320,6 +323,65 @@ async function handleSummaryAction(action: string): Promise<void> {
     render()
     toast('已重新训练本股，回到第 1 天')
   }
+}
+
+// ---- 重置账户 -------------------------------------------------------
+
+/**
+ * 「收益率」后面的重置入口：必须二次确认才动账户。
+ * 账户默认跨局连续（换股按当前价把持仓折成现金结转），只有确认重置
+ * 才把起始本金、开局资金一起打回 10 万，累计盈亏清零。
+ */
+function openResetConfirm(): void {
+  if (!engine || resetEl || summaryEl || tradeEl || intradayEl) return
+  stopAutoPlay()
+  const e = engine
+  const mask = document.createElement('div')
+  mask.className = 'summary-mask reset-mask'
+  mask.id = 'reset-mask'
+  mask.innerHTML = `<div class="summary-sheet reset-sheet" role="dialog" aria-modal="true" aria-labelledby="reset-title">
+    <div class="summary-head">
+      <div><h2 id="reset-title">重置账户？</h2><span class="summary-head-tag">不可撤销</span></div>
+      <button class="summary-close" data-reset="close" aria-label="关闭">×</button>
+    </div>
+    <div class="reset-body">
+      <p class="reset-line">当前总资产 <b>${money(round2(e.equity))}</b></p>
+      <p class="reset-line">累计盈亏 <b class="${signCls(e.profit)}">${signedMoney(e.profit)}（${pct(e.profitPct)}）</b></p>
+      <p class="reset-warn">确认后账户回到 <b>¥100,000</b>，累计盈亏与收益率清零；当前这局会先记入训练记录，再从第 1 天开始新的一局。此操作不可撤销。</p>
+    </div>
+    <div class="reset-actions">
+      <button data-reset="cancel">取消</button>
+      <button class="reset-confirm" data-reset="confirm">确认重置</button>
+    </div>
+  </div>`
+  mask.addEventListener('click', (ev) => {
+    const hit = (ev.target as HTMLElement).closest<HTMLElement>('[data-reset]')
+    if (hit) {
+      if (hit.dataset.reset === 'confirm') performReset()
+      else closeResetConfirm()
+      return
+    }
+    if (ev.target === mask) closeResetConfirm()
+  })
+  document.body.appendChild(mask)
+  resetEl = mask
+  syncBodyLock()
+}
+
+function closeResetConfirm(): void {
+  resetEl?.remove()
+  resetEl = null
+  syncBodyLock()
+}
+
+function performReset(): void {
+  if (!engine || !resetEl) return
+  closeResetConfirm()
+  finalizeCurrent()
+  startGame(undefined, true)
+  view = 'train'
+  render()
+  toast('账户已重置为 ¥100,000，累计盈亏清零')
 }
 
 // ---- 买入 / 卖出下单弹窗 --------------------------------------------
@@ -789,7 +851,7 @@ function positionPanel(e: ReplayEngine): string {
       <span class="pos-label">总资产 <i class="pos-badge">模拟仓</i></span>
       <span class="pos-label">可用</span>
       <span class="pos-label">总盈亏</span>
-      <span class="pos-label">收益率</span>
+      <span class="pos-label">收益率 <button class="reset-account-btn" data-action="resetAccount" title="把账户重置回 ¥100,000（需确认）">重置</button></span>
       <b id="s-equity">${money(round2(e.equity))}</b>
       <b id="s-cash">${money(e.cashValue)}</b>
       <b id="s-profit" class="${signCls(e.profit)}">${signedMoney(e.profit)}</b>
@@ -980,7 +1042,7 @@ function renderTrain(): void {
       ${moreOps(intraday)}
       <div id="history-wrap">${historyBar(e.historyPosition())}</div>
       <p class="fee-note" id="fee-note">${feeNote(e)}</p>
-      <p class="blind-note">股票名称与日期已隐藏 · <b class="up">B</b> 买入 / <b class="down">S</b> 卖出已标在图上 · 每次推进一个完整交易日；周K / 月K 当前柱逐日生长，跨周期才新增一根；分时整屏换一天 · 四个窗口是同一局同一只股票 · 缩小左拉或点「«」可看 2015 年起完整历史</p>
+      <p class="blind-note">股票名称与日期已隐藏 · <b class="up">B</b> 买入 / <b class="down">S</b> 卖出已标在图上 · 每次推进一个完整交易日；周K / 月K 当前柱逐日生长，跨周期才新增一根；分时整屏换一天 · 四个窗口是同一局同一只股票 · 换股资金连续，只有点收益率后的「重置」并确认才回到 10 万 · 缩小左拉或点「«」可看 2015 年起完整历史</p>
       <section class="panel" id="trade-panel">
         <h3>本局操作</h3>
         <div id="trade-list">${renderTrades(e.tradeList)}</div>
@@ -1454,18 +1516,27 @@ function restoreSession(): boolean {
   return true
 }
 
-function startGame(game?: Game): void {
+function startGame(game?: Game, resetAccount = false): void {
   if (!sessions) return
   stopAutoPlay()
   const picked = game ?? pickGame(sessions)
   currentGame = { ...picked }
   const symbol = sessions.symbols[picked.c]
   if (!symbol) return
-  const meta = windowMeta(sessions, engine?.currentView ?? 'day')
+  const previous = engine
+  const meta = windowMeta(sessions, previous?.currentView ?? 'day')
   const cfg = configForWindow(meta, loadFeeSchedule())
-  // 条件单是账户级的：换股后仍在列表里，但监控中的自动暂停
-  const carried = engine ? pauseOnSwitch(engine.orderList, picked.c) : []
-  engine = ReplayEngine.create(symbol, picked, cfg)
+  // 账户跨局连续：换股时把上一局持仓按当前价折算成现金（不另收费用）作为
+  // 新局开局资金；起始本金不变，总资产 / 总盈亏 / 收益率一路累计下去。
+  // 只有确认「重置」才把开局资金与起始本金一起打回 10 万。
+  const carry = resetAccount || !previous ? cfg.initialCash : round2(previous.equity)
+  const base = resetAccount || !previous ? cfg.baseCapital : previous.baseCapital
+  const nextCfg = { ...cfg, initialCash: carry, baseCapital: base }
+  // 条件单是账户级的：换股后仍在列表里，但监控中的自动暂停；重置则全部清空
+  const carried = resetAccount || !previous
+    ? []
+    : pauseOnSwitch(previous.orderList, picked.c)
+  engine = ReplayEngine.create(symbol, picked, nextCfg)
   engine.setOrders(carried)
   result = null
   draft = null
@@ -1688,6 +1759,9 @@ async function handle(action: string, target: HTMLElement): Promise<void> {
     }
     case 'switchStock':
       openSummary('switch')
+      return
+    case 'resetAccount':
+      openResetConfirm()
       return
     case 'tradeList':
       document.getElementById('trade-panel')?.scrollIntoView({ behavior: 'smooth', block: 'start' })
@@ -2037,6 +2111,7 @@ document.addEventListener('change', (event) => {
 document.addEventListener('keydown', (event) => {
   if (event.key !== 'Escape') return
   if (intradayEl) closeIntradaySheet()
+  else if (resetEl) closeResetConfirm()
   else if (tradeEl) closeTradeDialog()
   else if (summaryEl) closeSummary()
 })
