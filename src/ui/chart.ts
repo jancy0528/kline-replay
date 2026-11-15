@@ -386,11 +386,26 @@ export class ChartView {
     this.applyMarkers()
   }
 
-  /** 放大/缩小：库内部允许的最小 K 线宽度是 1px，一屏约 350 根。 */
+  /**
+   * 放大/缩小。不能直接 setBarSpace：库按「根数」保留右侧留白，柱宽一变，
+   * 留白像素 = 留白根数 × 柱宽 也跟着变，点放大时最后一根 K 会往左退、
+   * 右边空出一大块，看起来像图表整体左移而不是放大。
+   * 改用 zoomAtDataIndex，以视口右端那根 K 为锚，缩放后它的屏幕位置不动。
+   */
   zoom(factor: number): void {
-    if (!this.chart) return
+    if (!this.chart || !this.bars.length) return
     const space = this.chart.getBarSpace().bar
-    this.chart.setBarSpace(Math.max(1, Math.min(40, space * factor)))
+    const next = Math.max(1, Math.min(40, space * factor))
+    const scale = next / space
+    if (scale === 1) return
+    const range = this.chart.getVisibleRange()
+    const last = this.bars.length - 1
+    // 停在最新时锚定最后一根；左拉看历史时锚定当前右端可见那根，
+    // 否则会以屏幕外很远的一根为锚，历史画面反而大幅漂移。
+    const anchor = range.realTo >= this.bars.length
+      ? last
+      : Math.max(0, Math.min(last, Math.round(range.to - 1)))
+    this.chart.zoomAtDataIndex(scale, anchor)
   }
 
   /** 回到默认缩放下的最新 K 线（「最早/缩小」之后的复原入口）。 */

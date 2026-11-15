@@ -801,13 +801,15 @@ function historyBar(h: HistoryPosition | null): string {
 /** 截图里左下角的半透明圆形缩放浮层，绝对定位压在图表上。 */
 function chartOverlayTools(intraday: boolean): string {
   if (intraday) return ''
+  // 最后一个原来用「⤢」，长得像全屏/放大，容易被当成放大按钮；
+  // 直接写「最新」，与 toast 里的提示一致。其余按钮补 title 便于长按看说明。
   return `<div class="chart-overlay">
-    <button data-action="earliest" aria-label="最早">«</button>
-    <button data-action="zoomIn" aria-label="放大">＋</button>
-    <button data-action="zoomOut" aria-label="缩小">－</button>
-    <button data-action="panLeft" aria-label="看更早">‹</button>
-    <button data-action="panRight" aria-label="看更新">›</button>
-    <button data-action="latest" aria-label="回到最新">⤢</button>
+    <button data-action="earliest" title="跳到最早（2015 年起）" aria-label="最早">«</button>
+    <button data-action="zoomIn" title="放大：K 线变宽" aria-label="放大">＋</button>
+    <button data-action="zoomOut" title="缩小：看更多历史" aria-label="缩小">－</button>
+    <button data-action="panLeft" title="看更早" aria-label="看更早">‹</button>
+    <button data-action="panRight" title="看更新" aria-label="看更新">›</button>
+    <button class="overlay-latest" data-action="latest" title="回到最新并恢复默认缩放" aria-label="回到最新">最新</button>
   </div>`
 }
 
