@@ -16,6 +16,7 @@ import {
   tradeMarkers,
   type Candle,
   type HistoryPosition,
+  type IntradayData,
   type QuoteMetrics,
   type SessionResult,
   type Trade,
@@ -126,6 +127,19 @@ let endSummaryShown = false
 /** 买卖下单弹层，同样挂在 body 上；与总结弹层互斥 */
 let tradeEl: HTMLDivElement | null = null
 let tradeSide: 'buy' | 'sell' = 'buy'
+/** 【查看分时】弹层，同样挂在 body 上 */
+let intradayEl: HTMLDivElement | null = null
+/** 十字光标当前回看的那根 K 线；抬手后仍保留，让气泡上的按钮点得到。 */
+let crosshairCandle: Candle | null = null
+/** 均线显示开关，本机记住，默认开。 */
+const MA_PREF_KEY = 'kline-ma-visible'
+let showMA = ((): boolean => {
+  try {
+    return window.localStorage.getItem(MA_PREF_KEY) !== '0'
+  } catch {
+    return true
+  }
+})()
 
 function toast(message: string): void {
   let node = document.querySelector<HTMLDivElement>('#toast')
@@ -190,7 +204,7 @@ function summarySheet(e: ReplayEngine, reason: 'switch' | 'finished'): string {
 }
 
 function openSummary(reason: 'switch' | 'finished'): void {
-  if (!engine || summaryEl) return
+  if (!engine || summaryEl || intradayEl) return
   stopAutoPlay()
   const mask = document.createElement('div')
   mask.className = 'summary-mask'
@@ -217,7 +231,7 @@ function closeSummary(): void {
 
 /** 两种弹层都在 body 上，滚动锁由「是否还有弹层开着」统一决定。 */
 function syncBodyLock(): void {
-  document.body.classList.toggle('summary-open', !!(summaryEl || tradeEl))
+  document.body.classList.toggle('summary-open', !!(summaryEl || tradeEl || intradayEl))
 }
 
 /** 结束本局并落一条训练记录；复盘 / 换股 / 重新训练三个出口共用，避免重复计数。 */
@@ -412,7 +426,7 @@ function setTradeError(text: string): void {
 }
 
 function openTradeDialog(side: 'buy' | 'sell'): void {
-  if (!engine || tradeEl || summaryEl) return
+  if (!engine || tradeEl || summaryEl || intradayEl) return
   if (engine.isEnded) {
     toast('本局已结束，点「结束训练」看总结或换股')
     return
@@ -542,11 +556,14 @@ function header(active: View): string {
   </header>`
 }
 
-/** 推进按钮按当前窗口命名：一次推进就是那个周期的一根完整 K。 */
+/**
+ * 推进按钮文案：分时窗口不在本次改动范围内，保持「下一天」（一次换出
+ * 完整一天）。日K / 周K / 月K 统一「下一根」——步长恒为一个交易日，
+ * 不再随窗口变成「下一周 / 下一月」；周K / 月K 下点一次是当前那根柱
+ * 继续生长，跨到新周期才多一根。
+ */
 function nextLabel(key: PeriodKey): string {
-  if (key === 'week') return '下一周'
-  if (key === 'month') return '下一月'
-  return '下一天'
+  return key === 'm5' ? '下一天' : '下一根'
 }
 
 /** 周期栏：分时 / 日K / 周K / 月K，紧贴图表上方，选中态为红色下划线。 */
@@ -631,10 +648,10 @@ function fmtAmountYuan(n: number): string {
  * 顶部报价区，对齐同花顺：左侧大字现价 + 涨跌额/幅，右侧两列。
  * 按用户要求只保留 市值 / 流通 / 额 / 换，去掉 高低开、市盈、量比、振幅。
  */
-function quotePanel(q: QuoteMetrics): string {
+function quotePanel(q: QuoteMetrics, lookback = false): string {
   const cls = q.change >= 0 ? 'up' : 'down'
   const sign = q.change >= 0 ? '+' : ''
-  return `<div class="quote-panel" id="quote">
+  return `<div class="quote-panel${lookback ? ' is-lookback' : ''}" id="quote">
     <div class="quote-main">
       <b class="quote-price ${cls}">${q.price.toFixed(2)}</b>
       <div class="quote-chg ${cls}"><span>${sign}${q.change.toFixed(2)}</span><span>${sign}${q.changePct.toFixed(2)}%</span></div>
@@ -645,6 +662,7 @@ function quotePanel(q: QuoteMetrics): string {
       <div><span>流通</span><b>${q.floatCapYi.toFixed(2)}亿</b></div>
       <div><span>换</span><b>${q.turnoverPct.toFixed(2)}%</b></div>
     </div>
+    ${lookback ? '<span class="quote-lookback">光标回看 · 非当前价</span>' : ''}
   </div>`
 }
 
@@ -822,12 +840,111 @@ function renderTrades(trades: Trade[]): string {
     .join('')
 }
 
+/**
+ * 长按 / 移动十字光标时出现的小气泡，对齐原版【查看分时】。
+ * 固定在图表右上角：左上角被 KLineCharts 的 OHLC / MA 浮层占着，
+ * 跟随光标会压住那几行字，右上角既不挡行情也不挡 K 线。
+ */
+function crosshairTip(): string {
+  return `<div class="chart-crosshair-tip" id="crosshair-tip" hidden>
+    <button data-action="viewIntraday">查看分时</button>
+    <button class="tip-close" data-action="closeCrosshair" aria-label="关闭气泡">×</button>
+  </div>`
+}
+
+/** 均线图例恢复成最新一根 K 的数值；传 sliced 则显示光标所在那根的 MA。 */
+function restoreLegend(sliced?: Candle[]): void {
+  const legend = document.getElementById('indicator-legend')
+  if (!legend) return
+  if (view === 'review' && result) {
+    legend.innerHTML = indicatorLegend(sliced ?? result.candles, result.periodLabel, showMA)
+  } else if (engine) {
+    legend.innerHTML = indicatorLegend(sliced ?? engine.visible(), engine.viewLabel, showMA)
+  }
+}
+
+/** 收起气泡并忘掉回看的 K 线：推进、买卖、切窗口、重渲染时都要调。 */
+function clearCrosshair(): void {
+  crosshairCandle = null
+  const tip = document.getElementById('crosshair-tip')
+  if (tip) tip.hidden = true
+  restoreLegend()
+}
+
+function closeIntradaySheet(): void {
+  intradayEl?.remove()
+  intradayEl = null
+  syncBodyLock()
+}
+
+/** 点【查看分时】：用所选交易日的 5 分钟线画一张只读分时图。 */
+function openIntradaySheet(data: IntradayData, date: string): void {
+  if (intradayEl || summaryEl || tradeEl || !engine) return
+  clearCrosshair()
+  const fallback = data.points[data.points.length - 1]?.time ?? '15:00'
+  const marks = intradayMarks(engine.tradeList, date, fallback)
+  const mask = document.createElement('div')
+  mask.className = 'intraday-mask'
+  mask.innerHTML = `<div class="intraday-sheet" role="dialog" aria-modal="true" aria-labelledby="intraday-title">
+    <div class="summary-head">
+      <div><h2 id="intraday-title">当日分时</h2><span class="summary-head-tag">光标回看 · 日期已隐藏</span></div>
+      <button class="summary-close" data-intraday="close" aria-label="关闭">×</button>
+    </div>
+    <div class="intraday-sheet-body">${renderIntraday(data, marks)}</div>
+    <p class="tip intraday-sheet-tip">白线价格 · 黄线均价 · 红绿量柱；只展示已揭示历史，不会泄露未来行情。</p>
+  </div>`
+  mask.addEventListener('click', (ev) => {
+    const hit = (ev.target as HTMLElement).closest<HTMLElement>('[data-intraday]')
+    if (hit || ev.target === mask) closeIntradaySheet()
+  })
+  document.body.appendChild(mask)
+  intradayEl = mask
+  syncBodyLock()
+}
+
+/**
+ * 图表十字光标指向某根 K 线时，顶部「价格 / 市值 / 额 / 流通 / 换」
+ * 与均线图例数值整块切成那一天的行情，并亮出【查看分时】气泡。
+ * 抬手后库不再派发事件，ChartView 会回调 candle=null，此时报价与图例回到
+ * 当前训练日，气泡则保留在最后选中的那根 K 线上，保证手指能点到按钮。
+ */
+function onChartCrosshair(candle: Candle | null, dataIndex: number): void {
+  if (!engine || (view !== 'train' && view !== 'review')) return
+  const wrap = document.getElementById('quote-wrap')
+  if (!candle) {
+    if (wrap) wrap.innerHTML = quotePanel(engine.quoteMetrics())
+    restoreLegend()
+    return
+  }
+  const q = engine.quoteAt(candle.label)
+  if (!q) {
+    // 越界（理论上图表上不会出现未来 K）：别让气泡指向一根没有行情的 K 线
+    clearCrosshair()
+    if (wrap) wrap.innerHTML = quotePanel(engine.quoteMetrics())
+    restoreLegend()
+    return
+  }
+  crosshairCandle = candle
+  if (wrap) wrap.innerHTML = quotePanel(q, true)
+  const source = view === 'review' && result ? result.candles : engine.visible()
+  restoreLegend(source.slice(0, Math.max(1, dataIndex + 1)))
+  const tip = document.getElementById('crosshair-tip')
+  if (!tip) return
+  tip.hidden = false
+  const btn = tip.querySelector<HTMLButtonElement>('[data-action="viewIntraday"]')
+  if (btn) {
+    const ok = engine.hasIntraday(candle.label)
+    btn.classList.toggle('no-data', !ok)
+    btn.textContent = ok ? '查看分时' : '该日无分时'
+  }
+}
+
 function mountChart(candles: Candle[], intraday: boolean, markers: TradeMarker[] = []): void {
   // 分时窗走自绘 SVG，不初始化 KLineCharts（坐标系完全不同，复用反而会串数据）
   if (intraday) return
   const el = document.querySelector<HTMLElement>('#chart')
   if (!el) return
-  chartView = new ChartView(el)
+  chartView = new ChartView(el, onChartCrosshair, showMA)
   chartView.mount()
   chartView.setBars(candles)
   chartView.setMarkers(markers)
@@ -842,7 +959,7 @@ function renderTrain(): void {
   const q = e.quoteMetrics()
   const id = intraday ? e.intraday() : null
   const avg = id?.points[id.points.length - 1]?.avg ?? q.price
-  const legend = intraday ? intradayLegend(q, avg) : indicatorLegend(candles, e.viewLabel)
+  const legend = intraday ? intradayLegend(q, avg) : indicatorLegend(candles, e.viewLabel, showMA)
   const markers = intraday ? [] : tradeMarkers(candles, e.tradeList)
   const dayMarks = id
     ? intradayMarks(e.tradeList, id.date, id.points[id.points.length - 1]?.time ?? '15:00')
@@ -855,7 +972,7 @@ function renderTrain(): void {
       <div class="chart-area">
         ${intraday
           ? `<div id="intraday-wrap">${renderIntraday(id, dayMarks)}</div>`
-          : '<div id="chart" class="chart"></div>'}
+          : `<div id="chart" class="chart"></div>${crosshairTip()}`}
         ${chartOverlayTools(intraday)}
       </div>
       <div id="action-bar-wrap">${actionBar(e)}</div>
@@ -863,7 +980,7 @@ function renderTrain(): void {
       ${moreOps(intraday)}
       <div id="history-wrap">${historyBar(e.historyPosition())}</div>
       <p class="fee-note" id="fee-note">${feeNote(e)}</p>
-      <p class="blind-note">股票名称与日期已隐藏 · <b class="up">B</b> 买入 / <b class="down">S</b> 卖出已标在图上 · 每次推进一个完整交易日，分时整屏换一天 · 四个窗口是同一局同一只股票 · 缩小左拉或点「«」可看 2015 年起完整历史</p>
+      <p class="blind-note">股票名称与日期已隐藏 · <b class="up">B</b> 买入 / <b class="down">S</b> 卖出已标在图上 · 每次推进一个完整交易日；周K / 月K 当前柱逐日生长，跨周期才新增一根；分时整屏换一天 · 四个窗口是同一局同一只股票 · 缩小左拉或点「«」可看 2015 年起完整历史</p>
       <section class="panel" id="trade-panel">
         <h3>本局操作</h3>
         <div id="trade-list">${renderTrades(e.tradeList)}</div>
@@ -909,8 +1026,8 @@ function renderReview(): void {
         <div><span>最大回撤</span><b>${r.score.maxDrawdown.toFixed(2)}%</b></div>
         <div><span>交易 / 胜率</span><b>${r.score.tradeCount} / ${r.score.winRate}%</b></div>
       </section>
-      <div class="indicator-legend" id="indicator-legend">${indicatorLegend(r.candles, r.periodLabel)}</div>
-      <div class="chart-area"><div id="chart" class="chart"></div>${chartOverlayTools(false)}</div>
+      <div class="indicator-legend" id="indicator-legend">${indicatorLegend(r.candles, r.periodLabel, showMA)}</div>
+      <div class="chart-area"><div id="chart" class="chart"></div>${crosshairTip()}${chartOverlayTools(false)}</div>
       ${chartTools(false)}
       <p class="blind-note">上图为完整走势，<b class="up">B</b> 买入 / <b class="down">S</b> 卖出已标在 K 线上；下方资金曲线同步标注</p>
       <section class="panel">
@@ -1011,7 +1128,7 @@ function renderOrders(): void {
         <h3>说明</h3>
         <p>1. 发生换股或手动暂停时，条件单会进入暂停状态，需要手动恢复或编辑后才会继续生效；恢复前请确认触发价是否仍适用于新的一局。</p>
         <p>2. 条件单按列表从上往下顺序执行，上面的单执行完后可能导致后面的无法执行（资金不足、持仓不足、T+1、涨跌停），因此尽量避免多个条件单同时触发。</p>
-        <p>3. 每次推进按 5 分钟 K 线的最高／最低价判定触发，按触发价成交，佣金、印花、过户费照常扣除；日线窗口一次跨多根也会逐根判定。</p>
+        <p>3. 每次推进按 5 分钟 K 线的最高／最低价判定触发，按触发价成交，佣金、印花、过户费照常扣除；一次推进跨多根 5 分钟 K 也会逐根判定。</p>
       </section>
     </main>`
 }
@@ -1276,6 +1393,9 @@ function renderRecords(): void {
 }
 
 function renderShell(): void {
+  // 任何整页重渲染都收掉浮层，避免切页后气泡/弹层指向上一张图的数据
+  closeIntradaySheet()
+  clearCrosshair()
   chartView?.destroy()
   chartView = null
   if (loadError) {
@@ -1386,6 +1506,8 @@ function notifyOrders(before: ConditionalOrder[], after: ConditionalOrder[]): vo
 
 function updateTrainUI(): void {
   if (!engine || view !== 'train') return
+  // 推进 / 成交后顶部报价必须回到当前训练日，回看气泡不能留着指向旧的那根 K
+  clearCrosshair()
   const e = engine
   const intraday = e.currentView === 'm5'
   const candles = e.visible()
@@ -1414,7 +1536,7 @@ function updateTrainUI(): void {
     }
     chartView?.setMarkers(tradeMarkers(candles, e.tradeList))
     const legend = document.getElementById('indicator-legend')
-    if (legend) legend.innerHTML = indicatorLegend(candles, e.viewLabel)
+    if (legend) legend.innerHTML = indicatorLegend(candles, e.viewLabel, showMA)
   }
 
   const historyWrap = document.getElementById('history-wrap')
@@ -1434,7 +1556,7 @@ function updateTrainUI(): void {
   }
   updatePositionPanel(engine, set)
   // 操作条只局部改文字，绝不重建按钮节点：一局 150 天用户会连续快点
-  // 「下一天」，整条重建会让后续点击落在已被移除的旧节点上而丢步。
+  // 「下一根」，整条重建会让后续点击落在已被移除的旧节点上而丢步。
   set('action-progress', `${engine.index + 1} / ${engine.total} 天`)
   set('action-next', engine.isEnded ? '结束训练' : nextLabel(engine.currentView))
   const orders = document.getElementById('action-orders')
@@ -1610,6 +1732,40 @@ async function handle(action: string, target: HTMLElement): Promise<void> {
     case 'clearDraw':
       chartView?.clearDrawings()
       return
+    case 'toggleMA': {
+      showMA = !showMA
+      try {
+        window.localStorage.setItem(MA_PREF_KEY, showMA ? '1' : '0')
+      } catch {
+        // 本机存储不可用也不影响本局开关
+      }
+      chartView?.setMAVisible(showMA)
+      restoreLegend()
+      toast(showMA ? '均线已显示' : '均线已隐藏')
+      return
+    }
+    case 'viewIntraday': {
+      if (!engine || !crosshairCandle) {
+        toast('先长按 K 线选中某一天')
+        return
+      }
+      const date = crosshairCandle.label.slice(0, 10)
+      const data = engine.intradayFor(date)
+      if (!data) {
+        toast('该日没有分时数据（分钟线自 2025-08 起）')
+        return
+      }
+      openIntradaySheet(data, date)
+      return
+    }
+    case 'closeCrosshair': {
+      clearCrosshair()
+      if (engine && view === 'train') {
+        const wrap = document.getElementById('quote-wrap')
+        if (wrap) wrap.innerHTML = quotePanel(engine.quoteMetrics())
+      }
+      return
+    }
     case 'buy':
       openTradeDialog('buy')
       return
@@ -1880,7 +2036,8 @@ document.addEventListener('change', (event) => {
 // 弹层可以用 Esc / 点遮罩关掉：中途点错「换股」或误点买卖还能继续这一局
 document.addEventListener('keydown', (event) => {
   if (event.key !== 'Escape') return
-  if (tradeEl) closeTradeDialog()
+  if (intradayEl) closeIntradaySheet()
+  else if (tradeEl) closeTradeDialog()
   else if (summaryEl) closeSummary()
 })
 

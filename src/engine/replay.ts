@@ -353,11 +353,13 @@ export function intradayMarks(
 /**
  * 回放引擎：唯一持有完整一局历史的地方。
  *
- * 一局 = 一只标的 + 一个 5 分钟序列上的时间游标，但**推进单位是完整
- * 交易日**：开局游标停在起始日收盘，每次推进落到下一个日末。四窗口
- * 是同一段行情的四种视图，切换只改变 visible() 的聚合方式，资金、
- * 持仓、条件单、时间游标全部不动。当前交易日及其之前的完整 OHLC /
- * 分时都属于已知信息，之后的交易日绝不提前暴露。
+ * 一局 = 一只标的 + 一个 5 分钟序列上的时间游标，但**推进单位恒为完整
+ * 交易日**：开局游标停在起始日收盘，每次推进落到下一个日末，切到周K /
+ * 月K 也不会一次跳一整周 / 整月。四窗口是同一段行情的四种视图，切换只
+ * 改变 visible() 的聚合方式，资金、持仓、条件单、时间游标全部不动；周 /
+ * 月 K 的当前柱随每个交易日原地更新 OHLC 与量，只有跨到新周期才多出一根。
+ * 当前交易日及其之前的完整 OHLC / 分时都属于已知信息，之后的交易日绝不
+ * 提前暴露。
  */
 export class ReplayEngine {
   private readonly minBars: Bar[]
@@ -388,6 +390,8 @@ export class ReplayEngine {
   // 不缓存就会反复构建上万个对象；游标或视图变化后 key 自然失效。
   private visibleCache: { key: string; value: Candle[] } | null = null
   private fullCache: { key: string; value: Candle[] } | null = null
+  /** 5 分钟线按交易日建索引，供「光标回看报价 / 查看分时」O(1) 定位。 */
+  private readonly minuteDays: Map<string, [number, number]> = new Map()
 
   readonly id: string
   readonly code: string
@@ -405,6 +409,14 @@ export class ReplayEngine {
     this.minBars = symbol.m5
     this.dayBars = symbol.day
     this.fund = symbol.fundamentals ?? null
+    // m5 按时间递增，顺序扫一遍即可切成「日期 -> [首根, 末根]」；
+    // 训练当前日只取到游标，历史日整天都算已揭示。
+    for (let i = 0; i < this.minBars.length; i += 1) {
+      const day = dayOf(this.minBars[i][0])
+      const span = this.minuteDays.get(day)
+      if (span) span[1] = i
+      else this.minuteDays.set(day, [i, i])
+    }
     this.start = game.s
     this.end = game.e
     // 训练按「日」决策：开局就把起始日走完，停在该日最后一根 5 分钟 K。
@@ -744,6 +756,109 @@ export class ReplayEngine {
     }
   }
 
+  /** 二分找完整日线；日线按日期递增，2 千多根不用每次线性扫。 */
+  private findDayBar(day: string): Bar | null {
+    let lo = 0
+    let hi = this.dayBars.length - 1
+    while (lo <= hi) {
+      const mid = (lo + hi) >> 1
+      const label = this.dayBars[mid][0]
+      if (label === day) return this.dayBars[mid]
+      if (label < day) lo = mid + 1
+      else hi = mid - 1
+    }
+    return null
+  }
+
+  /**
+   * 十字光标停在历史某根日 K 上时，顶部报价区要显示的「那一天的行情」。
+   * 与 quoteMetrics 同口径：静态股本换算市值/流通/换手，成交额优先用当日
+   * 分钟线 Σ(收盘×量)，没有分钟线的老历史用 收盘×成交量 估算。
+   * 训练中一律拒绝当前日之后的日期，防止回看变成偷看未来。
+   */
+  quoteAt(date: string): QuoteMetrics | null {
+    const day = dayOf(date)
+    if (!this.ended && day > this.currentDay) return null
+    if (day === this.currentDay) return this.quoteMetrics()
+    const bar = this.findDayBar(day)
+    if (!bar) return null
+    const price = bar[4]
+    const prev = this.previousCloseFor(day)
+    const volume = bar[5]
+    const span = this.minuteDays.get(day)
+    let amount = price * volume
+    if (span) {
+      let sum = 0
+      for (let i = span[0]; i <= span[1]; i += 1) sum += this.minBars[i][4] * this.minBars[i][5]
+      amount = sum
+    }
+    const fund = this.fund
+    return {
+      price: round3(price),
+      change: round2(price - prev),
+      changePct: prev ? round2((price / prev - 1) * 100) : 0,
+      marketCapYi: fund ? round2((price * fund.totalShares) / 1e8) : 0,
+      floatCapYi: fund ? round2((price * fund.floatShares) / 1e8) : 0,
+      amount: round2(amount),
+      turnoverPct: fund && fund.floatShares > 0
+        ? round2((volume / fund.floatShares) * 100)
+        : 0,
+    }
+  }
+
+  /** 该日是否有 5 分钟线可看；分钟线只覆盖 2025-08 起的近端历史。 */
+  hasIntraday(date: string): boolean {
+    const day = dayOf(date)
+    if (!this.ended && day > this.currentDay) return false
+    return this.minuteDays.has(day)
+  }
+
+  /**
+   * 指定交易日的完整分时（【查看分时】气泡用）。
+   * 与 intraday() 的区别：intraday() 只服务当前训练日、起点受开局游标约束；
+   * 这里按日期直接取索引里的整段分钟线。复盘（ended）才允许看当前日之后。
+   */
+  intradayFor(date: string): IntradayData | null {
+    const day = dayOf(date)
+    if (!this.ended && day > this.currentDay) return null
+    const span = this.minuteDays.get(day)
+    if (!span) return null
+    const prevClose = this.previousCloseFor(day)
+    if (!prevClose) return null
+    const to = day === this.currentDay ? Math.min(span[1], this.now) : span[1]
+    if (to < span[0]) return null
+    const points: IntradayPoint[] = []
+    let amount = 0
+    let volume = 0
+    let high = prevClose
+    let low = prevClose
+    let prevPrice = prevClose
+    for (let i = span[0]; i <= to; i += 1) {
+      const bar = this.minBars[i]
+      const price = bar[4]
+      const v = bar[5]
+      amount += price * v
+      volume += v
+      high = Math.max(high, bar[2])
+      low = Math.min(low, bar[3])
+      points.push({
+        time: bar[0].slice(11, 16),
+        price,
+        avg: volume > 0 ? amount / volume : price,
+        volume: v,
+        up: price >= prevPrice,
+      })
+      prevPrice = price
+    }
+    if (!points.length) return null
+    const boundPct = Math.max(
+      1,
+      Math.abs((high / prevClose - 1) * 100),
+      Math.abs((low / prevClose - 1) * 100),
+    )
+    return { date: day, prevClose, points, high, low, boundPct: round2(boundPct), amount, volume }
+  }
+
   /** 当日已揭示的分时序列：白线价格、黄线均价、红绿量柱、对称涨跌幅刻度。 */
   intraday(): IntradayData | null {
     const day = this.currentDay
@@ -897,7 +1012,11 @@ export class ReplayEngine {
 
   // ---- 推进 ----------------------------------------------------------
 
-  /** 日线视图一次推进一根完整日 K：先补完当天，再逐日往前。 */
+  /**
+   * 一次推进 = 一个完整交易日，与当前窗口无关：先补完当天，再落到下一个
+   * 有行情的交易日的日末。周K / 月K 只是把这批日线重新聚合，当前周期那根
+   * 柱随之长高 / 收低，跨周期时 visible() 自然多出一根。
+   */
   private nextDayCursor(): number {
     const day = this.currentDay
     let todayEnd = this.now
@@ -916,42 +1035,18 @@ export class ReplayEngine {
     return this.end
   }
 
-  /**
-   * 周/月视图一次推进一根完整周 K / 月 K：先补完当前周期，跨到下一周期末。
-   * 与日线视图同思路，条件单仍在 for 循环里按 5 分钟 K 逐根判定。
-   */
-  private nextPeriodCursor(unit: 'week' | 'month'): number {
-    const current = periodKey(this.currentLabel, unit)
-    let periodEnd = this.now
-    for (let i = this.now; i <= this.end; i += 1) {
-      if (periodKey(this.minBars[i][0], unit) !== current) break
-      periodEnd = i
-    }
-    if (periodEnd > this.now) return periodEnd
-    for (let i = this.now + 1; i <= this.end; i += 1) {
-      const next = periodKey(this.minBars[i][0], unit)
-      if (next === current) continue
-      let last = i
-      while (last + 1 <= this.end && periodKey(this.minBars[last + 1][0], unit) === next) last += 1
-      return last
-    }
-    return this.end
-  }
-
   advance(): boolean {
     if (this.ended) return false
-    // 分时和日K 都是「一天一根」：分时一次换出完整一天，日K 多一根完整日线。
-    // 周/月视图沿用各自周期。条件单始终在下面按 5 分钟 K 逐根判定。
-    const target = this.view === 'week' || this.view === 'month'
-      ? this.nextPeriodCursor(this.view)
-      : this.nextDayCursor()
+    // 四个窗口共用同一根时间游标，步长永远是一天；条件单仍在下面按
+    // 5 分钟 K 逐根判定，不会因为切换窗口就跳掉中间的行情。
+    const target = this.nextDayCursor()
 
     for (let i = this.now + 1; i <= target; i += 1) {
       const bar = this.minBars[i]
       const prevDay = dayOf(this.minBars[i - 1][0])
       if (dayOf(bar[0]) !== prevDay) this.lockedShares = 0
       this.now = i
-      // 条件单按 5 分钟 K 逐根判定，日线视图下一次跨多根也会依次执行
+      // 条件单按 5 分钟 K 逐根判定，一次跨多根 5 分钟 K 也会依次执行
       this.orders = runOrders(this.orders, bar, i, (o, price) =>
         this.executeOrder(o, price, i),
       )

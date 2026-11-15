@@ -1,5 +1,8 @@
-import { dispose, init, registerOverlay, type Chart, type KLineData } from 'klinecharts'
+import { dispose, init, registerOverlay, type Chart, type Crosshair, type KLineData } from 'klinecharts'
 import type { Candle, TradeMarker } from '../engine/replay'
+
+/** 十字光标回看：candle 为光标所指 K 线，dataIndex 是它在可见序列里的下标；candle=null 表示光标离开。 */
+export type CrosshairHandler = (candle: Candle | null, dataIndex: number) => void
 
 const BASE_TS = Date.UTC(2020, 0, 1)
 const DAY_MS = 86_400_000
@@ -35,12 +38,18 @@ function maAt(candles: Candle[], period: number): number | null {
  * 只放三条均线＋前复权：390px 下一行刚好放得下，不需要横滑，也不会把标签挤出裁切。
  * 成交量与量均线数值由副图柱子和十字光标 tooltip 展示。
  */
-export function indicatorLegend(candles: Candle[], viewLabel = '日线'): string {
-  const mas = MA_PERIODS.map((period, i) => {
-    const value = maAt(candles, period)
-    return `<span class="ma-item" style="color:${MA_COLORS[i]}">MA${period} ${value === null ? '—' : value.toFixed(2)}</span>`
-  }).join('')
-  return `<span class="legend-prefix">均线▾ · ${viewLabel}</span>${mas}<span class="legend-tag">前复权</span>`
+export function indicatorLegend(candles: Candle[], viewLabel = '日线', showMA = true): string {
+  const mas = showMA
+    ? MA_PERIODS.map((period, i) => {
+        const value = maAt(candles, period)
+        return `<span class="ma-item" style="color:${MA_COLORS[i]}">MA${period} ${value === null ? '—' : value.toFixed(2)}</span>`
+      }).join('')
+    : '<span class="ma-off-hint">均线已隐藏</span>'
+  // 开关就放在「均线」这一行末尾，纯轨道不占文字宽度，避免 390px 下把图例挤换行。
+  const toggle = `<button class="ma-toggle ${showMA ? 'on' : ''}" data-action="toggleMA"
+    aria-pressed="${showMA}" aria-label="${showMA ? '隐藏均线' : '显示均线'}"
+    title="${showMA ? '隐藏均线' : '显示均线'}"><i></i></button>`
+  return `<span class="legend-prefix">均线▾ · ${viewLabel}</span>${mas}${toggle}<span class="legend-tag">前复权</span>`
 }
 
 // A 股习惯：红涨绿跌。KLineCharts 默认相反（绿涨红跌），必须整体翻转。
@@ -179,10 +188,23 @@ function ensureMarkerOverlay(): void {
 export class ChartView {
   private chart: Chart | null = null
   private bars: KLineData[] = []
+  /** 与 bars 一一对应的原始 Candle，十字光标回看时要拿 label 去查当日行情。 */
+  private candles: Candle[] = []
   private pushBar: ((bar: KLineData) => void) | null = null
   private markers: TradeMarker[] = []
+  private readonly container: HTMLElement
+  private readonly onCrosshair?: CrosshairHandler
+  private maVisible: boolean
+  private crosshairAction: ((data?: unknown) => void) | null = null
+  /** 库在光标消失时不会派发 onCrosshairChange，只能靠这些 DOM 事件补一个「离开」信号。 */
+  private readonly leaveEvents = ['pointerleave', 'touchend', 'touchcancel', 'pointercancel'] as const
+  private readonly onLeave = (): void => this.onCrosshair?.(null, -1)
 
-  constructor(private readonly container: HTMLElement) {}
+  constructor(container: HTMLElement, onCrosshair?: CrosshairHandler, maVisible = true) {
+    this.container = container
+    this.onCrosshair = onCrosshair
+    this.maVisible = maVisible
+  }
 
   mount(): void {
     if (this.chart) return
@@ -220,6 +242,27 @@ export class ChartView {
     )
     chart.setPaneOptions({ id: 'volume_pane', height: 92 })
     this.chart = chart
+
+    // 十字光标跟随：库派发的 data 只有 { x, y, paneId }，用 convertFromPixel
+    // 把 x 换算成 K 线下标。x 轴是各 pane 共用的，不传 paneId 反而更稳，
+    // 光标停在成交量副图上也能落到同一根 K 线。
+    this.crosshairAction = (data?: unknown): void => {
+      const handler = this.onCrosshair
+      if (!handler) return
+      const cr = (data ?? {}) as Partial<Crosshair>
+      if (typeof cr.x !== 'number' || !Number.isFinite(cr.x) || !this.candles.length) return
+      const converted = chart.convertFromPixel([{ x: cr.x }])
+      const point = Array.isArray(converted) ? converted[0] : converted
+      const raw = point?.dataIndex
+      if (typeof raw !== 'number' || !Number.isFinite(raw)) return
+      const index = Math.max(0, Math.min(this.candles.length - 1, Math.round(raw)))
+      const candle = this.candles[index]
+      if (candle) handler(candle, index)
+    }
+    chart.subscribeAction('onCrosshairChange', this.crosshairAction)
+    // 光标消失（抬手 / 鼠标移出）时库不会派发事件，靠 DOM 事件补「离开」。
+    for (const name of this.leaveEvents) this.container.addEventListener(name, this.onLeave)
+    if (!this.maVisible) chart.removeIndicator({ paneId: 'candle_pane', name: 'MA' })
   }
 
   /**
@@ -232,6 +275,7 @@ export class ChartView {
       ? this.chart.getOverlays().filter((o) => o.groupId !== MARKER_GROUP).map((o) => ({ ...o }))
       : []
     this.bars = candles.map(toKLine)
+    this.candles = candles.slice()
     this.chart?.resetData()
     if (saved.length && this.chart) {
       try {
@@ -298,10 +342,33 @@ export class ChartView {
     const bar = toKLine(candle)
     const last = this.bars[this.bars.length - 1]
     if (last && bar.timestamp < last.timestamp) return
-    if (last && bar.timestamp === last.timestamp) this.bars[this.bars.length - 1] = bar
-    else this.bars.push(bar)
+    if (last && bar.timestamp === last.timestamp) {
+      this.bars[this.bars.length - 1] = bar
+      this.candles[this.candles.length - 1] = candle
+    } else {
+      this.bars.push(bar)
+      this.candles.push(candle)
+    }
     if (this.pushBar) this.pushBar(bar)
     else this.chart?.resetData()
+  }
+
+  /**
+   * 主图 MA5/MA10/MA20 显示开关。直接增删指标而不是改 visible：
+   * 库对 overrideIndicator 的 visible 变化不一定触发重绘，删建是必然重绘的，
+   * 一次切换重算 2 千多根均线的开销可以忽略。VOL 的成交量柱不受影响。
+   */
+  setMAVisible(visible: boolean): void {
+    if (!this.chart || this.maVisible === visible) return
+    this.maVisible = visible
+    if (visible) {
+      this.chart.createIndicator(
+        { name: 'MA', paneId: 'candle_pane', calcParams: [...MA_PERIODS] },
+        true,
+      )
+    } else {
+      this.chart.removeIndicator({ paneId: 'candle_pane', name: 'MA' })
+    }
   }
 
   /** 放大/缩小：库内部允许的最小 K 线宽度是 1px，一屏约 350 根。 */
@@ -355,10 +422,16 @@ export class ChartView {
 
   destroy(): void {
     if (!this.chart) return
+    if (this.crosshairAction) {
+      this.chart.unsubscribeAction('onCrosshairChange', this.crosshairAction)
+      this.crosshairAction = null
+    }
+    for (const name of this.leaveEvents) this.container.removeEventListener(name, this.onLeave)
     dispose(this.chart)
     this.chart = null
     this.pushBar = null
     this.bars = []
+    this.candles = []
     this.markers = []
   }
 }
